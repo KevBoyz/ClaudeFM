@@ -1,7 +1,7 @@
 # tests/test_api.py
 import json
 from unittest.mock import MagicMock, patch
-from src.database.database import init_db, insert_track
+from src.database.database import init_db, insert_track, update_lyrics_status
 from src.database.config_manager import set_setting
 from src.models.track import Track
 from src.api.api import ClaudeFMAPI
@@ -55,3 +55,116 @@ def test_get_playlists_returns_list(db_conn, tmp_path):
     result = json.loads(api.get_playlists())
     assert len(result) == 1
     assert result[0]["name"] == "Test"
+
+
+# ── Lyrics API ────────────────────────────────────────────────────────────────
+
+def test_fetch_lyrics_returns_lyrics_status(db_conn, tmp_path):
+    init_db(db_conn)
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead", file_path="/tmp/creep.m4a"))
+    api = _make_api(db_conn, tmp_path)
+
+    with patch("src.api.api.LRCLibService") as MockSvc:
+        MockSvc.return_value.fetch_and_embed.return_value = "synchronized"
+        result = json.loads(api.fetch_lyrics(track_id))
+
+    assert result["success"] is True
+    assert result["data"]["lyrics_status"] == "synchronized"
+
+
+def test_fetch_lyrics_unknown_track(db_conn, tmp_path):
+    init_db(db_conn)
+    api = _make_api(db_conn, tmp_path)
+
+    with patch("src.api.api.LRCLibService") as MockSvc:
+        MockSvc.return_value.fetch_and_embed.return_value = None
+        result = json.loads(api.fetch_lyrics(9999))
+
+    assert result["success"] is False
+    assert "not found" in result["error"].lower()
+
+
+def test_fetch_missing_lyrics_returns_ok(db_conn, tmp_path):
+    init_db(db_conn)
+    api = _make_api(db_conn, tmp_path)
+
+    with patch("src.api.api.LRCLibService") as MockSvc:
+        result = json.loads(api.fetch_missing_lyrics())
+
+    assert result["success"] is True
+    MockSvc.return_value.fetch_missing_lyrics.assert_called_once()
+
+
+def test_get_lyrics_returns_text_and_status(db_conn, tmp_path):
+    init_db(db_conn)
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead", file_path="/tmp/creep.m4a"))
+    api = _make_api(db_conn, tmp_path)
+
+    with patch("src.api.api.LRCLibService") as MockSvc:
+        MockSvc.return_value.get_lyrics.return_value = {
+            "lyrics": "[00:01.00] I'm a creep",
+            "lyrics_status": "synchronized",
+        }
+        result = json.loads(api.get_lyrics(track_id))
+
+    assert result["success"] is True
+    assert result["data"]["lyrics"] == "[00:01.00] I'm a creep"
+    assert result["data"]["lyrics_status"] == "synchronized"
+
+
+def test_get_lyrics_no_lyrics(db_conn, tmp_path):
+    init_db(db_conn)
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead", file_path="/tmp/creep.m4a"))
+    api = _make_api(db_conn, tmp_path)
+
+    with patch("src.api.api.LRCLibService") as MockSvc:
+        MockSvc.return_value.get_lyrics.return_value = {
+            "lyrics": None,
+            "lyrics_status": "not_fetched",
+        }
+        result = json.loads(api.get_lyrics(track_id))
+
+    assert result["success"] is True
+    assert result["data"]["lyrics"] is None
+
+
+def test_get_lyrics_track_not_found(db_conn, tmp_path):
+    init_db(db_conn)
+    api = _make_api(db_conn, tmp_path)
+
+    with patch("src.api.api.LRCLibService") as MockSvc:
+        MockSvc.return_value.get_lyrics.return_value = None
+        result = json.loads(api.get_lyrics(9999))
+
+    assert result["success"] is False
+
+
+def test_queue_download_wires_async_hook_when_auto_fetch_enabled(db_conn, tmp_path):
+    init_db(db_conn)
+    set_setting(db_conn, "auto_fetch_lyrics", "true")
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
+    api = _make_api(db_conn, tmp_path)
+
+    with patch("src.api.api.LRCLibService") as MockSvc, \
+         patch("src.api.api.YouTubeService") as MockYT:
+        expected_hook = MockSvc.return_value.fetch_and_embed_async
+        api.queue_download(track_id)
+
+    MockYT.return_value.queue_download.assert_called_once_with(
+        track_id, on_complete=expected_hook
+    )
+
+
+def test_queue_download_no_hook_when_auto_fetch_disabled(db_conn, tmp_path):
+    init_db(db_conn)
+    set_setting(db_conn, "auto_fetch_lyrics", "false")
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
+    api = _make_api(db_conn, tmp_path)
+
+    with patch("src.api.api.LRCLibService"), \
+         patch("src.api.api.YouTubeService") as MockYT:
+        api.queue_download(track_id)
+
+    MockYT.return_value.queue_download.assert_called_once_with(
+        track_id, on_complete=None
+    )

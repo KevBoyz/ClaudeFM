@@ -13,6 +13,7 @@ from src.models.playlist import Playlist
 from src.services.lastfm_service import LastFMService
 from src.services.youtube_service import YouTubeService
 from src.services.player_service import PlayerService
+from src.services.lrclib_service import LRCLibService
 from src.utils.logger import get_logger
 from src.utils.event_bus import event_bus
 
@@ -35,6 +36,7 @@ class ClaudeFMAPI:
         self._player = PlayerService()
         self._youtube: YouTubeService | None = None
         self._lastfm: LastFMService | None = None
+        self._lrclib: LRCLibService | None = None
 
     def _get_youtube(self) -> YouTubeService:
         if self._youtube is None:
@@ -46,6 +48,11 @@ class ClaudeFMAPI:
             api_key = get_setting(self._conn, "lastfm_api_key")
             self._lastfm = LastFMService(self._conn, api_key)
         return self._lastfm
+
+    def _get_lrclib(self) -> LRCLibService:
+        if self._lrclib is None:
+            self._lrclib = LRCLibService(self._conn)
+        return self._lrclib
 
     # ── Library ──────────────────────────────────────────────────────────────
 
@@ -108,9 +115,21 @@ class ClaudeFMAPI:
 
     # ── Downloads ─────────────────────────────────────────────────────────────
 
+    def queue_download(self, track_id: int) -> str:
+        try:
+            auto = get_setting(self._conn, "auto_fetch_lyrics") == "true"
+            hook = self._get_lrclib().fetch_and_embed_async if auto else None
+            self._get_youtube().queue_download(track_id, on_complete=hook)
+            return _ok()
+        except Exception as e:
+            log.error(f"queue_download: {e}", exc_info=True)
+            return _err(str(e))
+
     def download_track(self, track_id: int) -> str:
         try:
-            self._get_youtube().queue_download(track_id)
+            auto = get_setting(self._conn, "auto_fetch_lyrics") == "true"
+            hook = self._get_lrclib().fetch_and_embed_async if auto else None
+            self._get_youtube().queue_download(track_id, on_complete=hook)
             return _ok()
         except Exception as e:
             return _err(str(e))
@@ -119,7 +138,9 @@ class ClaudeFMAPI:
         try:
             t = Track(title=title, artist=artist, album=album)
             track_id = insert_track(self._conn, t)
-            self._get_youtube().queue_download(track_id)
+            auto = get_setting(self._conn, "auto_fetch_lyrics") == "true"
+            hook = self._get_lrclib().fetch_and_embed_async if auto else None
+            self._get_youtube().queue_download(track_id, on_complete=hook)
             return json.dumps({"success": True, "track_id": track_id})
         except Exception as e:
             return _err(str(e))
@@ -242,6 +263,36 @@ class ClaudeFMAPI:
             update_playlist_name(self._conn, playlist_id, name)
             return _ok()
         except Exception as e:
+            return _err(str(e))
+
+    # ── Lyrics ────────────────────────────────────────────────────────────────
+
+    def fetch_lyrics(self, track_id: int) -> str:
+        try:
+            status = self._get_lrclib().fetch_and_embed(track_id)
+            if status is None:
+                return _err("Track not found")
+            return _ok({"lyrics_status": status})
+        except Exception as e:
+            log.error(f"fetch_lyrics: {e}", exc_info=True)
+            return _err(str(e))
+
+    def fetch_missing_lyrics(self) -> str:
+        try:
+            self._get_lrclib().fetch_missing_lyrics()
+            return _ok()
+        except Exception as e:
+            log.error(f"fetch_missing_lyrics: {e}", exc_info=True)
+            return _err(str(e))
+
+    def get_lyrics(self, track_id: int) -> str:
+        try:
+            result = self._get_lrclib().get_lyrics(track_id)
+            if result is None:
+                return _err("Track not found")
+            return _ok(result)
+        except Exception as e:
+            log.error(f"get_lyrics: {e}", exc_info=True)
             return _err(str(e))
 
     def add_to_playlist(self, playlist_id: int, track_id: int) -> str:
