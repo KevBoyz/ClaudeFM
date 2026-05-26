@@ -66,3 +66,8 @@ def test_playlist_rejects_empty_name():
 def test_playlist_track_rejects_negative_position():
     with pytest.raises(ValidationError):
         PlaylistTrack(playlist_id=1, track_id=1, position=-1)
+
+
+def test_track_lyrics_status_defaults_to_not_fetched():
+    t = Track(title="Creep", artist="Radiohead")
+    assert t.lyrics_status == "not_fetched"
