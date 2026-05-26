@@ -14,29 +14,8 @@ from src.api.api import ClaudeFMAPI
 log = get_logger("app")
 
 
-def _get_vendor_path(name: str) -> Path:
-    if getattr(sys, "frozen", False):
-        base = Path(sys._MEIPASS)
-    else:
-        base = Path(__file__).parent
-    return base / "assets" / "vendor" / name
-
-
-def _check_binary(path: Path, label: str) -> None:
-    if not path.exists():
-        import tkinter.messagebox as mb
-        mb.showerror("ClaudeFM — Startup Error", f"{label} not found at:\n{path}\n\nCannot start.")
-        sys.exit(1)
-    log.info(f"{label} found: {path}")
-
-
 def main():
     log.info("ClaudeFM starting")
-
-    ffmpeg = _get_vendor_path("ffmpeg.exe")
-    ytdlp = _get_vendor_path("yt-dlp.exe")
-    _check_binary(ffmpeg, "ffmpeg")
-    _check_binary(ytdlp, "yt-dlp")
 
     conn = get_connection()
     init_db(conn)
