@@ -1,0 +1,98 @@
+import sys
+import json
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from src.utils.logger import get_logger
+from src.database.database import get_connection, init_db
+from src.database.config_manager import get_setting, get_all_settings, set_setting
+from src.database.file_manager import quick_scan, start_background_scan
+from src.utils.event_bus import event_bus
+from src.api.api import ClaudeFMAPI
+
+log = get_logger("app")
+
+
+def _get_vendor_path(name: str) -> Path:
+    if getattr(sys, "frozen", False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).parent
+    return base / "assets" / "vendor" / name
+
+
+def _check_binary(path: Path, label: str) -> None:
+    if not path.exists():
+        import tkinter.messagebox as mb
+        mb.showerror("ClaudeFM — Startup Error", f"{label} not found at:\n{path}\n\nCannot start.")
+        sys.exit(1)
+    log.info(f"{label} found: {path}")
+
+
+def main():
+    log.info("ClaudeFM starting")
+
+    ffmpeg = _get_vendor_path("ffmpeg.exe")
+    ytdlp = _get_vendor_path("yt-dlp.exe")
+    _check_binary(ffmpeg, "ffmpeg")
+    _check_binary(ytdlp, "yt-dlp")
+
+    conn = get_connection()
+    init_db(conn)
+    log.info("Database initialised")
+
+    folders_json = get_setting(conn, "additional_folders")
+    download_folder = get_setting(conn, "download_folder")
+    folders = json.loads(folders_json)
+    if download_folder:
+        folders = [download_folder] + folders
+    quick_scan(conn)
+    log.info("Quick scan complete")
+
+    api = ClaudeFMAPI(conn)
+
+    import webview
+
+    window = webview.create_window(
+        "ClaudeFM",
+        url=str(Path(__file__).parent / "src" / "interface" / "pages" / "home.html"),
+        js_api=api,
+        width=1200,
+        height=750,
+        min_size=(900, 600),
+    )
+
+    event_bus.set_window(window)
+
+    def on_loaded():
+        settings = get_all_settings(conn)
+        if not settings.get("lastfm_api_key") or not settings.get("download_folder"):
+            window.evaluate_js("router.navigate('settings')")
+        last_id = settings.get("player_last_track_id", "")
+        last_pos = settings.get("player_last_position", "0")
+        if last_id:
+            window.evaluate_js(
+                f"onEvent({{\"type\":\"restore_player\",\"track_id\":{last_id},\"position\":{last_pos}}})"
+            )
+        if folders:
+            start_background_scan(conn, folders)
+
+    def on_closing():
+        q = api._player.queue
+        track_id = q.current_id()
+        position = api._player.get_position()
+        if track_id:
+            set_setting(conn, "player_last_track_id", str(track_id))
+            set_setting(conn, "player_last_position", str(int(position)))
+            set_setting(conn, "player_last_context", json.dumps(q.to_dict()))
+        log.info("ClaudeFM closing")
+
+    window.events.loaded += on_loaded
+    window.events.closing += on_closing
+
+    webview.start(debug=False)
+
+
+if __name__ == "__main__":
+    main()
