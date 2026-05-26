@@ -1,0 +1,45 @@
+{
+  "name": "dark",
+  "displayName": "Dark",
+
+  "colors": {
+    "bg_base":     "#121212",
+    "bg_surface":  "#181818",
+    "bg_elevated": "#1f1f1f",
+    "bg_card":     "#252525",
+    "bg_input":    "#1f1f1f",
+
+    "accent":        "#1ed760",
+    "accent_dark":   "#1db954",
+    "accent_text":   "#000000",
+
+    "text_primary":   "#ffffff",
+    "text_secondary": "#b3b3b3",
+    "text_muted":     "#6a6a6a",
+    "text_on_accent": "#000000",
+
+    "border":       "#4d4d4d",
+    "border_light": "#7c7c7c",
+    "separator":    "#2a2a2a",
+
+    "error":   "#f3727f",
+    "warning": "#ffa42b",
+    "info":    "#539df5",
+    "success": "#1ed760",
+
+    "shadow_heavy":  "rgba(0, 0, 0, 0.5)",
+    "shadow_medium": "rgba(0, 0, 0, 0.3)",
+    "shadow_light":  "rgba(0, 0, 0, 0.15)",
+
+    "overlay": "rgba(0, 0, 0, 0.6)",
+
+    "player_bg":  "#181818",
+    "topbar_bg":  "#121212",
+    "sidebar_bg": "#121212"
+  },
+
+  "typography": {
+    "font_family": "'Helvetica Neue', helvetica, arial, 'Hiragino Sans', 'Meiryo', sans-serif",
+    "font_family_title": "'Helvetica Neue', helvetica, arial, sans-serif"
+  }
+}

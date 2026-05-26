@@ -1,0 +1,45 @@
+{
+  "name": "light",
+  "displayName": "Light",
+
+  "colors": {
+    "bg_base":     "#ffffff",
+    "bg_surface":  "#f5f5f5",
+    "bg_elevated": "#eeeeee",
+    "bg_card":     "#e8e8e8",
+    "bg_input":    "#f0f0f0",
+
+    "accent":        "#1db954",
+    "accent_dark":   "#169c46",
+    "accent_text":   "#ffffff",
+
+    "text_primary":   "#121212",
+    "text_secondary": "#535353",
+    "text_muted":     "#8a8a8a",
+    "text_on_accent": "#ffffff",
+
+    "border":       "#d4d4d4",
+    "border_light": "#b3b3b3",
+    "separator":    "#e0e0e0",
+
+    "error":   "#d32f2f",
+    "warning": "#e65100",
+    "info":    "#1565c0",
+    "success": "#1db954",
+
+    "shadow_heavy":  "rgba(0, 0, 0, 0.15)",
+    "shadow_medium": "rgba(0, 0, 0, 0.08)",
+    "shadow_light":  "rgba(0, 0, 0, 0.04)",
+
+    "overlay": "rgba(0, 0, 0, 0.4)",
+
+    "player_bg":  "#f5f5f5",
+    "topbar_bg":  "#ffffff",
+    "sidebar_bg": "#ffffff"
+  },
+
+  "typography": {
+    "font_family": "'Helvetica Neue', helvetica, arial, 'Hiragino Sans', 'Meiryo', sans-serif",
+    "font_family_title": "'Helvetica Neue', helvetica, arial, sans-serif"
+  }
+}

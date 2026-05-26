@@ -1,0 +1,54 @@
+/* Shared design tokens — not theme-specific. Applied once, never overridden by themes. */
+
+:root {
+  /* Typography */
+  --font-size-section-title: 1.50rem;   /* 24px */
+  --font-size-heading:       1.13rem;   /* 18px */
+  --font-size-body-large:    1.00rem;   /* 16px */
+  --font-size-body:          1.00rem;   /* 16px */
+  --font-size-button:        0.88rem;   /* 14px */
+  --font-size-caption:       0.88rem;   /* 14px */
+  --font-size-small:         0.75rem;   /* 12px */
+  --font-size-badge:         0.66rem;   /* 10.5px */
+  --font-size-micro:         0.63rem;   /* 10px */
+
+  --font-weight-bold:     700;
+  --font-weight-semibold: 600;
+  --font-weight-regular:  400;
+
+  --letter-spacing-button: 1.4px;
+  --letter-spacing-button-wide: 2px;
+
+  /* Spacing (8px base unit) */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Border radius */
+  --radius-minimal:   2px;
+  --radius-subtle:    4px;
+  --radius-standard:  6px;
+  --radius-comfort:   8px;
+  --radius-medium:    12px;
+  --radius-large:     20px;
+  --radius-pill-sm:   100px;
+  --radius-pill:      500px;
+  --radius-full:      9999px;
+  --radius-circle:    50%;
+
+  /* Layout */
+  --sidebar-width:    240px;
+  --topbar-height:    56px;
+  --player-bar-height: 72px;
+
+  /* Transitions */
+  --transition-fast:   0.1s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow:   0.3s ease;
+}
