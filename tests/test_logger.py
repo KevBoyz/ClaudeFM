@@ -14,6 +14,11 @@ def test_logger_has_correct_name():
 
 
 def test_logger_does_not_duplicate_handlers():
-    log1 = get_logger("dup")
-    log2 = get_logger("dup")
-    assert log1 is log2
+    get_logger("dup")
+    get_logger("dup")
+    get_logger("other")
+    root = logging.getLogger("claudefm")
+    assert root.handlers  # at least one handler exists
+    handler_count = len(root.handlers)
+    get_logger("another")
+    assert len(root.handlers) == handler_count  # no new handlers added
