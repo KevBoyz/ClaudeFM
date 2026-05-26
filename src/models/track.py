@@ -1,13 +1,13 @@
 from __future__ import annotations
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Track(BaseModel):
     id: int | None = None
-    title: str
-    artist: str
+    title: str = Field(min_length=1)
+    artist: str = Field(min_length=1)
     album: str | None = None
     duration: int | None = None
     file_path: str | None = None
