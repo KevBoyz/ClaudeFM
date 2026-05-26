@@ -5,5 +5,6 @@ yt-dlp==2024.5.27
 imageio[ffmpeg]
 miniaudio==1.71
 mutagen==1.47.0
+lrcup
 pytest==8.2.0
 pytest-mock==3.14.0
