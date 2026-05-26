@@ -1,6 +1,5 @@
 import re
 import sqlite3
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from src.database.database import get_track, update_track_status
@@ -34,6 +33,9 @@ class YouTubeService:
 
     def queue_download(self, track_id: int) -> None:
         self._executor.submit(self.download, track_id)
+
+    def shutdown(self, wait: bool = False) -> None:
+        self._executor.shutdown(wait=wait)
 
     def download(self, track_id: int) -> None:
         track = get_track(self._conn, track_id)
@@ -93,8 +95,5 @@ class YouTubeService:
             filename = ydl.prepare_filename(info)
             final = Path(filename).with_suffix(f".{audio_format}")
             if not final.exists():
-                files = sorted(Path(download_dir).glob(f"*.{audio_format}"), key=lambda f: f.stat().st_mtime)
-                if files:
-                    return str(files[-1])
                 raise FileNotFoundError(f"Download completed but file not found: {final}")
             return str(final)
