@@ -27,3 +27,13 @@ def test_set_and_retrieve_sidebar_state(db_conn):
     init_db(db_conn)
     set_setting(db_conn, "sidebar_collapsed", "true")
     assert get_setting(db_conn, "sidebar_collapsed") == "true"
+
+
+def test_auto_fetch_lyrics_default_true(db_conn):
+    init_db(db_conn)
+    assert get_setting(db_conn, "auto_fetch_lyrics") == "true"
+
+
+def test_player_volume_default_one(db_conn):
+    init_db(db_conn)
+    assert get_setting(db_conn, "player_volume") == "1.0"

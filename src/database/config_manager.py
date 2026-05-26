@@ -13,6 +13,8 @@ DEFAULTS: dict[str, str] = {
     "player_last_position": "0",
     "player_last_context": "",
     "download_concurrency": "2",
+    "auto_fetch_lyrics": "true",
+    "player_volume": "1.0",
 }
 
 
