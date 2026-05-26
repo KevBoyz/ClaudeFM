@@ -45,3 +45,51 @@ def test_download_marks_failed_on_error(db_conn, tmp_music_dir):
     track = get_track(db_conn, track_id)
     assert track.download_status == "failed"
     assert "yt-dlp error" in track.download_error
+
+
+def test_queue_download_calls_on_complete_on_success(db_conn, tmp_music_dir):
+    init_db(db_conn)
+    from src.database.database import insert_track
+    from src.models.track import Track
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
+    svc = _make_service(db_conn, tmp_music_dir)
+    called_with = []
+
+    def hook(tid):
+        called_with.append(tid)
+
+    with patch.object(svc, "_run_ytdlp") as mock_dl:
+        mock_dl.return_value = str(tmp_music_dir / "Radiohead - Creep.m4a")
+        (tmp_music_dir / "Radiohead - Creep.m4a").write_bytes(b"fake")
+        svc.download(track_id, on_complete=hook)
+
+    assert called_with == [track_id]
+
+
+def test_queue_download_no_on_complete_on_failure(db_conn, tmp_music_dir):
+    init_db(db_conn)
+    from src.database.database import insert_track
+    from src.models.track import Track
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
+    svc = _make_service(db_conn, tmp_music_dir)
+    called = []
+
+    with patch.object(svc, "_run_ytdlp", side_effect=Exception("yt-dlp error")):
+        svc.download(track_id, on_complete=lambda tid: called.append(tid))
+
+    assert called == []
+
+
+def test_queue_download_no_hook_still_works(db_conn, tmp_music_dir):
+    init_db(db_conn)
+    from src.database.database import insert_track, get_track
+    from src.models.track import Track
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
+    svc = _make_service(db_conn, tmp_music_dir)
+
+    with patch.object(svc, "_run_ytdlp") as mock_dl:
+        mock_dl.return_value = str(tmp_music_dir / "Radiohead - Creep.m4a")
+        (tmp_music_dir / "Radiohead - Creep.m4a").write_bytes(b"fake")
+        svc.download(track_id)
+
+    assert get_track(db_conn, track_id).download_status == "completed"

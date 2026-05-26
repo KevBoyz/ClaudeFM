@@ -1,5 +1,6 @@
 import re
 import sqlite3
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from src.database.database import get_track, update_track_status
@@ -31,13 +32,13 @@ class YouTubeService:
             max_workers=int(get_setting(conn, "download_concurrency"))
         )
 
-    def queue_download(self, track_id: int) -> None:
-        self._executor.submit(self.download, track_id)
+    def queue_download(self, track_id: int, on_complete: Callable[[int], None] | None = None) -> None:
+        self._executor.submit(self.download, track_id, on_complete)
 
     def shutdown(self, wait: bool = False) -> None:
         self._executor.shutdown(wait=wait)
 
-    def download(self, track_id: int) -> None:
+    def download(self, track_id: int, on_complete: Callable[[int], None] | None = None) -> None:
         track = get_track(self._conn, track_id)
         if not track:
             return
@@ -56,6 +57,8 @@ class YouTubeService:
                 youtube_url=f"ytsearch:{query}",
             )
             event_bus.emit("download_complete", {"track_id": track_id})
+            if on_complete:
+                on_complete(track_id)
         except Exception as e:
             log.error(f"Download failed for track {track_id}: {e}", exc_info=True)
             update_track_status(
