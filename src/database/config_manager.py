@@ -35,5 +35,6 @@ def get_all_settings(conn: sqlite3.Connection) -> dict[str, str]:
     rows = conn.execute("SELECT key, value FROM settings").fetchall()
     result = dict(DEFAULTS)
     for row in rows:
-        result[row[0]] = row[1]
+        if row[1] is not None:
+            result[row[0]] = row[1]
     return result
