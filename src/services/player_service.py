@@ -54,6 +54,7 @@ class PlayerService:
         self._stop_event = threading.Event()
         self._position: float = 0.0
         self._paused: bool = False
+        self._lock = threading.Lock()
 
     def play(self, file_path: str) -> None:
         self._stop_event.set()
@@ -68,16 +69,19 @@ class PlayerService:
         self._thread.start()
 
     def pause(self) -> None:
-        self._paused = True
+        with self._lock:
+            self._paused = True
 
     def resume(self) -> None:
-        self._paused = False
+        with self._lock:
+            self._paused = False
 
     def stop(self) -> None:
         self._stop_event.set()
 
     def get_position(self) -> float:
-        return self._position
+        with self._lock:
+            return self._position
 
     def _playback_thread(self, file_path: str) -> None:
         try:
@@ -87,10 +91,13 @@ class PlayerService:
             with miniaudio.PlaybackDevice() as device:
                 device.start(stream)
                 while not self._stop_event.is_set():
-                    if self._paused:
+                    with self._lock:
+                        paused = self._paused
+                    if paused:
                         time.sleep(0.1)
                         continue
-                    self._position += 0.1
+                    with self._lock:
+                        self._position += 0.1
                     time.sleep(0.1)
             event_bus.emit("playback_ended", {})
         except Exception as e:

@@ -44,7 +44,10 @@ def main():
 
     folders_json = get_setting(conn, "additional_folders")
     download_folder = get_setting(conn, "download_folder")
-    folders = json.loads(folders_json)
+    try:
+        folders = json.loads(folders_json)
+    except (json.JSONDecodeError, TypeError):
+        folders = []
     if download_folder:
         folders = [download_folder] + folders
     quick_scan(conn)
@@ -86,6 +89,9 @@ def main():
             set_setting(conn, "player_last_track_id", str(track_id))
             set_setting(conn, "player_last_position", str(int(position)))
             set_setting(conn, "player_last_context", json.dumps(q.to_dict()))
+        if api._youtube is not None:
+            api._youtube.shutdown(wait=False)
+        conn.close()
         log.info("ClaudeFM closing")
 
     window.events.loaded += on_loaded
