@@ -1,7 +1,14 @@
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from src.models.track import Track
 from src.models.playlist import Playlist, PlaylistTrack
+
+_ALLOWED_ORDER_BY = {
+    "date_downloaded DESC", "date_downloaded ASC",
+    "title ASC", "title DESC",
+    "artist ASC", "artist DESC",
+}
 
 _DB_PATH = Path(__file__).parent.parent.parent / "claudefm.db"
 
@@ -64,6 +71,7 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 
 def _row_to_track(row: sqlite3.Row) -> Track:
+    date_dl = row["date_downloaded"]
     return Track(
         id=row["id"],
         title=row["title"],
@@ -73,6 +81,7 @@ def _row_to_track(row: sqlite3.Row) -> Track:
         file_path=row["file_path"],
         audio_format=row["audio_format"],
         youtube_url=row["youtube_url"],
+        date_downloaded=datetime.fromisoformat(date_dl) if date_dl else None,
         download_status=row["download_status"],
         download_error=row["download_error"],
         file_status=row["file_status"],
@@ -127,6 +136,8 @@ def update_track_status(
 
 
 def get_all_tracks(conn: sqlite3.Connection, order_by: str = "date_downloaded DESC") -> list[Track]:
+    if order_by not in _ALLOWED_ORDER_BY:
+        order_by = "date_downloaded DESC"
     rows = conn.execute(f"SELECT * FROM tracks ORDER BY {order_by}").fetchall()
     return [_row_to_track(r) for r in rows]
 
@@ -157,7 +168,6 @@ def search_tracks_local(conn: sqlite3.Connection, query: str, limit: int = 5) ->
 
 
 def insert_playlist(conn: sqlite3.Connection, playlist: Playlist) -> int:
-    from datetime import datetime
     now = datetime.now().isoformat()
     cur = conn.execute(
         "INSERT INTO playlists (name, type, created_at, updated_at) VALUES (?,?,?,?)",
