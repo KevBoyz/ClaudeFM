@@ -35,7 +35,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             date_downloaded TEXT,
             download_status TEXT NOT NULL DEFAULT 'pending',
             download_error  TEXT,
-            file_status     TEXT NOT NULL DEFAULT 'available'
+            file_status     TEXT NOT NULL DEFAULT 'available',
+            lyrics_status   TEXT NOT NULL DEFAULT 'not_fetched'
         );
 
         CREATE TABLE IF NOT EXISTS playlists (
@@ -85,6 +86,7 @@ def _row_to_track(row: sqlite3.Row) -> Track:
         download_status=row["download_status"],
         download_error=row["download_error"],
         file_status=row["file_status"],
+        lyrics_status=row["lyrics_status"],
     )
 
 
@@ -133,6 +135,18 @@ def update_track_status(
     values.append(track_id)
     conn.execute(f"UPDATE tracks SET {', '.join(fields)} WHERE id=?", values)
     conn.commit()
+
+
+def update_lyrics_status(conn: sqlite3.Connection, track_id: int, status: str) -> None:
+    conn.execute("UPDATE tracks SET lyrics_status=? WHERE id=?", (status, track_id))
+    conn.commit()
+
+
+def get_tracks_without_lyrics(conn: sqlite3.Connection) -> list[Track]:
+    rows = conn.execute(
+        "SELECT * FROM tracks WHERE lyrics_status='not_fetched'"
+    ).fetchall()
+    return [_row_to_track(r) for r in rows]
 
 
 def get_all_tracks(conn: sqlite3.Connection, order_by: str = "date_downloaded DESC") -> list[Track]:

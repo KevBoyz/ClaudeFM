@@ -1,7 +1,7 @@
 # tests/test_database.py
 import sqlite3
 import pytest
-from src.database.database import init_db, get_connection, insert_track, get_track, update_track_status, get_all_tracks
+from src.database.database import init_db, get_connection, insert_track, get_track, update_track_status, get_all_tracks, update_lyrics_status, get_tracks_without_lyrics
 
 
 def test_init_creates_all_tables(db_conn):
@@ -38,3 +38,35 @@ def test_get_all_tracks_returns_list(db_conn):
     insert_track(db_conn, Track(title="B", artist="Y"))
     tracks = get_all_tracks(db_conn)
     assert len(tracks) == 2
+
+
+def test_lyrics_status_default_not_fetched(db_conn):
+    init_db(db_conn)
+    from src.models.track import Track
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
+    fetched = get_track(db_conn, track_id)
+    assert fetched.lyrics_status == "not_fetched"
+
+
+def test_update_lyrics_status(db_conn):
+    init_db(db_conn)
+    from src.models.track import Track
+    track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
+    update_lyrics_status(db_conn, track_id, "synchronized")
+    fetched = get_track(db_conn, track_id)
+    assert fetched.lyrics_status == "synchronized"
+
+
+def test_get_tracks_without_lyrics_filters_correctly(db_conn):
+    init_db(db_conn)
+    from src.models.track import Track
+    id1 = insert_track(db_conn, Track(title="A", artist="X"))
+    id2 = insert_track(db_conn, Track(title="B", artist="X"))
+    id3 = insert_track(db_conn, Track(title="C", artist="X"))
+    update_lyrics_status(db_conn, id2, "synchronized")
+    update_lyrics_status(db_conn, id3, "not_found")
+    result = get_tracks_without_lyrics(db_conn)
+    ids = [t.id for t in result]
+    assert id1 in ids
+    assert id2 not in ids
+    assert id3 not in ids
