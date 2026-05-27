@@ -16,7 +16,8 @@ const LyricsPanel = (() => {
       if (id) {
         const btn = document.getElementById('lp-fetch');
         btn.textContent = '⏳'; btn.disabled = true;
-        await lyrics.fetch(id);
+        const t = player.state.track;
+        await lyrics.fetch(id, t?.id === id ? t?.title : undefined, t?.id === id ? t?.artist : undefined);
         btn.textContent = 'Fetch'; btn.disabled = false;
       }
     };
@@ -45,7 +46,7 @@ const LyricsPanel = (() => {
     } else if (state.status === 'instrumental') {
       body.innerHTML = '<p class="lyrics-empty">Instrumental</p>';
     } else if (state.status === 'not_found') {
-      body.innerHTML = '<p class="lyrics-empty">Lyrics not found. <button class="lyrics-fetch-btn" onclick="lyrics.fetch(lyrics.state.track_id)">Retry</button></p>';
+      body.innerHTML = '<p class="lyrics-empty">Lyrics not found. <button class="lyrics-fetch-btn" onclick="lyrics.fetch(lyrics.state.track_id, player.state.track?.id===lyrics.state.track_id?player.state.track?.title:undefined, player.state.track?.id===lyrics.state.track_id?player.state.track?.artist:undefined)">Retry</button></p>';
     } else {
       body.innerHTML = '<p class="lyrics-empty">Lyrics not fetched yet.</p>';
     }

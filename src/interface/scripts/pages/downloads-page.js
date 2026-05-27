@@ -35,7 +35,8 @@ const downloadsPage = (() => {
       ? history.map(d => `
           <div class="download-row" style="padding:12px 0">
             <div class="download-row-info">
-              <div class="download-row-title">Track ${d.track_id}</div>
+              <div class="download-row-title">${d.title || 'Track ' + d.track_id}</div>
+              <div class="download-row-sub">${d.artist || ''}</div>
             </div>
             ${d.status === 'completed'
               ? '<span class="download-status-ok">✓ Completed</span>'

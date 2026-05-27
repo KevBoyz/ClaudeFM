@@ -26,10 +26,9 @@ const PlayerBar = (() => {
           <span class="player-time" id="pb-dur">0:00</span>
         </div>
         <div class="player-volume">
-          <span class="volume-icon">🔊</span>
+          <span class="volume-icon" id="pb-vol-icon">🔊</span>
           <input type="range" id="pb-vol" min="0" max="100" value="100" />
         </div>
-        <button class="player-open-lyrics" id="pb-open-lyrics">♪</button>
       </div>`;
 
     document.getElementById('pb-prev').onclick = () => player.prev();
@@ -40,7 +39,11 @@ const PlayerBar = (() => {
       player.seek(frac * (player.state.duration || 0));
     });
     document.getElementById('pb-vol').addEventListener('input', e => {
-      player.setVolume(parseInt(e.target.value) / 100);
+      const pct = parseInt(e.target.value);
+      e.target.style.setProperty('--vol-pct', `${pct}%`);
+      const icon = document.getElementById('pb-vol-icon');
+      if (icon) icon.textContent = pct === 0 ? '🔇' : '🔊';
+      player.setVolume(pct / 100);
     });
     document.getElementById('pb-vol').addEventListener('change', e => {
       api.save_setting('player_volume', (parseInt(e.target.value) / 100).toFixed(2));
@@ -49,10 +52,6 @@ const PlayerBar = (() => {
       const s = player.state.track?.lyrics_status;
       if (s === 'synchronized' || s === 'plain_text') lyrics.open(player.state.track.id);
     };
-    document.getElementById('pb-open-lyrics').onclick = () => {
-      if (player.state.track) lyrics.open(player.state.track.id);
-    };
-
     document.addEventListener('player:changed', e => _update(e.detail));
     document.addEventListener('player:tick',    e => _tick(e.detail.position));
   }

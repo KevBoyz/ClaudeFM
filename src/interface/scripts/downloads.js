@@ -4,9 +4,9 @@ const downloads = (() => {
 
   function activeCount() { return Object.keys(active).length; }
 
-  async function queue(trackId) {
+  async function queue(trackId, title, artist) {
     await api.queue_download(trackId);
-    active[trackId] = { track_id: trackId, percent: 0 };
+    active[trackId] = { track_id: trackId, percent: 0, title, artist };
     _notify();
   }
 
@@ -28,16 +28,18 @@ const downloads = (() => {
   }
 
   function onComplete(e) {
+    const info = active[e.track_id] || {};
     delete active[e.track_id];
-    history.unshift({ track_id: e.track_id, status: 'completed' });
+    history.unshift({ track_id: e.track_id, status: 'completed', title: info.title, artist: info.artist });
     _notify();
     toast.show('Download complete', 'success', 3000);
     document.dispatchEvent(new CustomEvent('library:changed'));
   }
 
   function onError(e) {
+    const info = active[e.track_id] || {};
     delete active[e.track_id];
-    history.unshift({ track_id: e.track_id, status: 'error', error: e.message });
+    history.unshift({ track_id: e.track_id, status: 'error', error: e.message, title: info.title, artist: info.artist });
     _notify();
     toast.show('Download failed', 'error', 5000);
   }

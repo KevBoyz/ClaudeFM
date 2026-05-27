@@ -1,5 +1,23 @@
 // Shared card builder functions — used by all page scripts.
 
+// Index of locally available tracks: "title|artist" → true
+const _localIdx = new Map();
+
+async function refreshLocalIndex() {
+    try {
+        const tracks = await api.get_library();
+        _localIdx.clear();
+        (Array.isArray(tracks) ? tracks : []).forEach(t => {
+            if (t.download_status === 'completed' && t.file_status === 'available')
+                _localIdx.set(`${(t.title||'').toLowerCase()}|${(t.artist||'').toLowerCase()}`, true);
+        });
+    } catch (_) {}
+}
+
+function isAvailable(title, artist) {
+    return _localIdx.has(`${(title||'').toLowerCase()}|${(artist||'').toLowerCase()}`);
+}
+
 // Pages set this before rendering so track card onclick uses correct queue.
 let _pageQueue = [];
 function setPageQueue(ids) { _pageQueue = ids; }
@@ -23,7 +41,7 @@ function trackCard(track) {
     action = '<button class="track-card-action done" disabled>✓</button>';
   } else {
     action = `<button class="track-card-action"
-      onclick="event.stopPropagation();downloads.queue(${track.id})">⬇</button>`;
+      onclick="event.stopPropagation();startLibraryDownload(this,${track.id},${JSON.stringify(track.title)},${JSON.stringify(track.artist)})">⬇</button>`;
   }
 
   return `<div class="track-card" data-track-id="${track.id}"
@@ -40,6 +58,25 @@ function trackCard(track) {
     </div>
   </div>`;
 }
+
+function startLibraryDownload(btn, trackId, title, artist) {
+  btn.textContent = '⏳';
+  btn.disabled = true;
+  downloads.queue(trackId, title, artist);
+}
+
+// Listen for active downloads to keep visible track card buttons in sync
+document.addEventListener('downloads:changed', () => {
+  document.querySelectorAll('.track-card[data-track-id]').forEach(card => {
+    const id = parseInt(card.dataset.trackId);
+    const btn = card.querySelector('.track-card-action');
+    if (!btn || btn.disabled) return;
+    if (downloads.active[id]) {
+      btn.textContent = '⏳';
+      btn.disabled = true;
+    }
+  });
+});
 
 function artistCard(name, trackCount) {
   const safe = (name||'').replace(/'/g,"\\'");

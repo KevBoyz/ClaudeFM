@@ -92,6 +92,12 @@ def _row_to_track(row: sqlite3.Row) -> Track:
 
 
 def insert_track(conn: sqlite3.Connection, track: Track) -> int:
+    existing = conn.execute(
+        "SELECT id FROM tracks WHERE title=? AND artist=?",
+        (track.title, track.artist),
+    ).fetchone()
+    if existing:
+        return existing["id"]
     cur = conn.execute(
         """INSERT INTO tracks (title, artist, album, duration, file_path, audio_format,
            youtube_url, date_downloaded, download_status, download_error, file_status)

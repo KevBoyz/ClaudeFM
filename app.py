@@ -1,5 +1,6 @@
 import sys
 import json
+import ctypes
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -15,6 +16,7 @@ log = get_logger("app")
 
 
 def main():
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("com.claudefm.app")
     log.info("ClaudeFM starting")
 
     conn = get_connection()
@@ -76,7 +78,8 @@ def main():
     window.events.loaded += on_loaded
     window.events.closing += on_closing
 
-    webview.start(debug=False)
+    icon_path = Path(__file__).parent / "src" / "interface" / "assets" / "icons" / "favicon.ico"
+    webview.start(debug=False, icon=str(icon_path))
 
 
 if __name__ == "__main__":

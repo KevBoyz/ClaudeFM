@@ -79,6 +79,7 @@ const Sidebar = (() => {
       // track
       const isLocal = r._src === 'local';
       const downloaded = isLocal && r.download_status === 'completed' && r.file_status === 'available';
+      const alreadyAvail = !isLocal && isAvailable(r.title, r.artist);
       return `
         <div class="sidebar-result-item" ${isLocal ? `data-track-id="${r.id}"` : ''}>
           <div class="sidebar-result-info" onclick="${isLocal ? `player.play(${r.id},[${r.id}])` : ''}">
@@ -86,7 +87,9 @@ const Sidebar = (() => {
             <div class="sidebar-result-sub">${r.artist}</div>
           </div>
           ${!isLocal
-            ? `<button class="sidebar-dl-btn" data-title="${(r.title||'').replace(/"/g,'&quot;')}" data-artist="${(r.artist||'').replace(/"/g,'&quot;')}">⬇</button>`
+            ? (alreadyAvail
+                ? '<span style="color:var(--color-success)">✓</span>'
+                : `<button class="sidebar-dl-btn" data-title="${(r.title||'').replace(/"/g,'&quot;')}" data-artist="${(r.artist||'').replace(/"/g,'&quot;')}">⬇</button>`)
             : (downloaded ? '<span style="color:var(--color-success)">✓</span>' : '')}
         </div>`;
     }).join('');

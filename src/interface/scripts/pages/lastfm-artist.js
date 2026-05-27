@@ -30,16 +30,20 @@ const lastfmArtistPage = (() => {
     if (!content) return;
 
     const tracksHtml = topTracks.length
-      ? topTracks.map(t => `
-          <div class="sidebar-result-item">
+      ? topTracks.map(t => {
+          const avail = isAvailable(t.title || t.name, name);
+          return `<div class="sidebar-result-item">
             <div class="sidebar-result-info">
               <div class="sidebar-result-title">${t.title || t.name}</div>
               <div class="sidebar-result-sub">${name}</div>
             </div>
-            <button class="sidebar-dl-btn"
-              data-title="${(t.title||t.name||'').replace(/"/g,'&quot;')}"
-              data-artist="${name.replace(/"/g,'&quot;')}">⬇</button>
-          </div>`).join('')
+            ${avail
+              ? '<span style="color:var(--color-success)">✓</span>'
+              : `<button class="sidebar-dl-btn"
+                  data-title="${(t.title||t.name||'').replace(/"/g,'&quot;')}"
+                  data-artist="${name.replace(/"/g,'&quot;')}">⬇</button>`}
+          </div>`;
+        }).join('')
       : '<div class="empty-state" style="text-align:left">No tracks found.</div>';
 
     const albumsHtml = albums.length

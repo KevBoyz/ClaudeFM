@@ -1,5 +1,6 @@
 import re
 import sqlite3
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -43,9 +44,23 @@ class YouTubeService:
         self._executor = ThreadPoolExecutor(
             max_workers=int(get_setting(conn, "download_concurrency"))
         )
+        self._active: set[int] = set()
+        self._active_lock = threading.Lock()
 
     def queue_download(self, track_id: int, on_complete: Callable[[int], None] | None = None) -> None:
-        self._executor.submit(self.download, track_id, on_complete)
+        with self._active_lock:
+            if track_id in self._active:
+                log.debug(f"queue_download: track {track_id} already active, skipping")
+                return
+            self._active.add(track_id)
+        self._executor.submit(self._run_download, track_id, on_complete)
+
+    def _run_download(self, track_id: int, on_complete: Callable[[int], None] | None) -> None:
+        try:
+            self.download(track_id, on_complete)
+        finally:
+            with self._active_lock:
+                self._active.discard(track_id)
 
     def shutdown(self, wait: bool = False) -> None:
         self._executor.shutdown(wait=wait)
@@ -53,6 +68,10 @@ class YouTubeService:
     def download(self, track_id: int, on_complete: Callable[[int], None] | None = None) -> None:
         track = get_track(self._conn, track_id)
         if not track:
+            return
+        if track.download_status == "completed" and track.file_status == "available":
+            if on_complete:
+                on_complete(track_id)
             return
         update_track_status(self._conn, track_id, download_status="downloading")
         event_bus.emit("download_progress", {"track_id": track_id, "percent": 0})

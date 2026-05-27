@@ -32,7 +32,7 @@ const contextMenu = (() => {
 
     if (!downloaded) {
       _el.appendChild(_sep());
-      _el.appendChild(_item('Download', () => downloads.queue(track.id)));
+      _el.appendChild(_item('Download', () => downloads.queue(track.id, track.title, track.artist)));
     }
 
     _el.appendChild(_sep());
@@ -66,7 +66,7 @@ const contextMenu = (() => {
 
     if (noLyrics) {
       _el.appendChild(_sep());
-      _el.appendChild(_item('Fetch lyrics', () => lyrics.fetch(track.id)));
+      _el.appendChild(_item('Fetch lyrics', () => lyrics.fetch(track.id, track.title, track.artist)));
     }
 
     if (downloaded) {

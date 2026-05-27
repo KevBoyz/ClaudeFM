@@ -34,16 +34,19 @@ const lastfmAlbumPage = (() => {
 
     const rows = tracks.map((t, i) => {
       const trackTitle = t.title || t.name || '';
+      const avail = isAvailable(trackTitle, artist);
       return `<div class="sidebar-result-item" style="padding:8px 0">
         <span style="color:var(--color-text_secondary);font-size:.8rem;width:24px;flex-shrink:0">${i + 1}</span>
         <div class="sidebar-result-info">
           <div class="sidebar-result-title">${trackTitle}</div>
           <div class="sidebar-result-sub">${artist}</div>
         </div>
-        <button class="sidebar-dl-btn"
-          data-title="${trackTitle.replace(/"/g,'&quot;')}"
-          data-artist="${artist.replace(/"/g,'&quot;')}"
-          data-album="${title.replace(/"/g,'&quot;')}">⬇</button>
+        ${avail
+          ? '<span style="color:var(--color-success)">✓</span>'
+          : `<button class="sidebar-dl-btn"
+              data-title="${trackTitle.replace(/"/g,'&quot;')}"
+              data-artist="${artist.replace(/"/g,'&quot;')}"
+              data-album="${title.replace(/"/g,'&quot;')}">⬇</button>`}
       </div>`;
     }).join('');
 

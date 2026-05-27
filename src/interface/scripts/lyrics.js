@@ -32,8 +32,11 @@ const lyrics = (() => {
     document.dispatchEvent(new CustomEvent('lyrics:changed', { detail: { ...state } }));
   }
 
-  async function fetch(trackId) {
-    await api.fetch_lyrics(trackId);
+  async function fetch(trackId, title, artist) {
+    document.dispatchEvent(new CustomEvent('lyrics:fetch_start', { detail: { track_id: trackId, title, artist } }));
+    const result = await api.fetch_lyrics(trackId);
+    const status = result?.data?.lyrics_status ?? (result?.success === false ? 'error' : null);
+    document.dispatchEvent(new CustomEvent('lyrics:fetch_end', { detail: { track_id: trackId, title, artist, status } }));
     if (state.track_id === trackId) await open(trackId);
     document.dispatchEvent(new CustomEvent('lyrics:track_updated', { detail: { track_id: trackId } }));
   }
@@ -82,6 +85,11 @@ const lyrics = (() => {
 
   document.addEventListener('player:tick', e => {
     if (state.panelOpen) syncHighlight(e.detail.position);
+  });
+
+  document.addEventListener('player:changed', e => {
+    const t = e.detail.track;
+    if (state.panelOpen && t && t.id !== state.track_id) open(t.id);
   });
 
   return { state, open, close, fetch, fetchMissing, syncHighlight, onProgress, onFetchComplete };

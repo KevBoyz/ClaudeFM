@@ -71,12 +71,22 @@
       const vol = parseFloat(settings.player_volume || '1.0');
       player.setVolume(vol);
       const volSlider = document.getElementById('pb-vol');
-      if (volSlider) volSlider.value = Math.round(vol * 100);
+      if (volSlider) {
+        const pct = Math.round(vol * 100);
+        volSlider.value = pct;
+        volSlider.style.setProperty('--vol-pct', `${pct}%`);
+        const volIcon = document.getElementById('pb-vol-icon');
+        if (volIcon) volIcon.textContent = pct === 0 ? '🔇' : '🔊';
+      }
 
       // Wire global push events
       api.on('library_scan_complete', e => {
         document.dispatchEvent(new CustomEvent('library:scan_complete', { detail: e }));
       });
+
+      refreshLocalIndex();
+      document.addEventListener('library:changed', () => refreshLocalIndex());
+      document.addEventListener('library:scan_complete', () => refreshLocalIndex());
 
       // Navigate to home (or settings if unconfigured — app.py overrides via evaluate_js)
       router.init();
