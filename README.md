@@ -7,7 +7,7 @@ Desktop music player for Windows. Search metadata via Last.fm, download audio fr
 | Layer | Tech |
 |---|---|
 | UI | pywebview 6.2.1 (HTML/CSS/JS SPA) |
-| Audio playback | miniaudio 1.71 |
+| Audio playback | sounddevice 0.5.1 (PortAudio) |
 | Metadata | pylast 5.3.0 (Last.fm API) |
 | Download | yt-dlp + imageio[ffmpeg] |
 | Lyrics | lrcup (LRCLIB API) + mutagen |
@@ -20,7 +20,7 @@ Desktop music player for Windows. Search metadata via Last.fm, download audio fr
 1. Search artist/track/album on Last.fm via the sidebar
 2. Download audio from YouTube as m4a or mp3
 3. Lyrics fetched automatically from LRCLIB after download (if enabled)
-4. Play from local library via miniaudio with seek and volume control
+4. Play from local library with seek, volume, and queue control
 5. All state persisted in SQLite (`claudefm.db`)
 
 ## Setup
@@ -60,14 +60,14 @@ src/
   services/
     lastfm_service.py           # Last.fm search with 30-day cache
     youtube_service.py          # yt-dlp download + filename sanitization
-    player_service.py           # miniaudio playback + seek + volume + queue
+    player_service.py           # sounddevice playback + seek + volume + queue
     lrclib_service.py           # LRCLIB lyrics fetch + mutagen embed
   api/
     api.py                      # pywebview js_api — all methods callable from JS
   utils/
     logger.py                   # Session-based rotating logger
     event_bus.py                # Centralised push events (evaluate_js)
-  interface/                    # HTML/CSS/JS frontend (not yet built)
+  interface/                    # HTML/CSS/JS SPA (home, library, artists, albums, playlists, settings)
 tests/                          # pytest suite
 docs/superpowers/               # Specs and implementation plans
 ```
