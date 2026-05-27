@@ -2,7 +2,7 @@ const ThemeLoader = (() => {
   let _current = 'dark';
 
   async function load(name) {
-    const url = `../styles/themes/${name}.json`;
+    const url = `styles/themes/${name}.json`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Theme not found: ${name}`);
     const theme = await res.json();

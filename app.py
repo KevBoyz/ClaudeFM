@@ -38,7 +38,7 @@ def main():
 
     window = webview.create_window(
         "ClaudeFM",
-        url=str(Path(__file__).parent / "src" / "interface" / "pages" / "home.html"),
+        url=str(Path(__file__).parent / "src" / "interface" / "home.html"),
         js_api=api,
         width=1200,
         height=750,

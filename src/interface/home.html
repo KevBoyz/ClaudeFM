@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClaudeFM</title>
+  <link rel="stylesheet" href="styles/base.css" />
+  <link rel="stylesheet" href="styles/components.css" />
+  <link rel="stylesheet" href="styles/pages.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div id="layout">
+    <nav id="sidebar"></nav>
+    <main id="main-content"></main>
+  </div>
+  <div id="player-bar"></div>
+  <div id="lyrics-panel"></div>
+  <div id="modal-container" class="hidden"></div>
+  <div id="context-menu" class="hidden"></div>
+  <div id="download-panel" class="hidden"></div>
+  <div id="toast-container"></div>
+
+  <!-- Core (no inter-dependency) -->
+  <script src="scripts/api.js"></script>
+  <script src="scripts/theme-loader.js"></script>
+  <script src="scripts/router.js"></script>
+  <script src="scripts/toast.js"></script>
+  <script src="scripts/modal.js"></script>
+
+  <!-- State modules -->
+  <script src="scripts/player.js"></script>
+  <script src="scripts/downloads.js"></script>
+  <script src="scripts/lyrics.js"></script>
+
+  <!-- UI components -->
+  <script src="scripts/components.js"></script>
+  <script src="scripts/topbar.js"></script>
+  <script src="scripts/sidebar.js"></script>
+  <script src="scripts/player-bar.js"></script>
+  <script src="scripts/lyrics-panel.js"></script>
+  <script src="scripts/context-menu.js"></script>
+  <script src="scripts/keyboard.js"></script>
+
+  <!-- Pages -->
+  <script src="scripts/pages/home.js"></script>
+  <script src="scripts/pages/artists.js"></script>
+  <script src="scripts/pages/albums.js"></script>
+  <script src="scripts/pages/lastfm-artist.js"></script>
+  <script src="scripts/pages/lastfm-album.js"></script>
+  <script src="scripts/pages/playlists.js"></script>
+  <script src="scripts/pages/playlist-detail.js"></script>
+  <script src="scripts/pages/downloads-page.js"></script>
+  <script src="scripts/pages/settings.js"></script>
+
+  <script>
+    window.addEventListener('pywebviewready', async () => {
+      // Load settings first (theme + sidebar state)
+      const settings = await api.get_settings();
+
+      ThemeLoader.load(settings.theme || 'dark');
+
+      const sidebarCollapsed = settings.sidebar_collapsed === 'true';
+      Topbar.render(sidebarCollapsed);
+      Sidebar.render();
+      PlayerBar.render();
+      LyricsPanel.render();
+      keyboard.init();
+
+      // Restore player volume from settings
+      const vol = parseFloat(settings.player_volume || '1.0');
+      player.setVolume(vol);
+      const volSlider = document.getElementById('pb-vol');
+      if (volSlider) volSlider.value = Math.round(vol * 100);
+
+      // Wire global push events
+      api.on('library_scan_complete', e => {
+        document.dispatchEvent(new CustomEvent('library:scan_complete', { detail: e }));
+      });
+
+      // Navigate to home (or settings if unconfigured — app.py overrides via evaluate_js)
+      router.init();
+    });
+  </script>
+</body>
+</html>

@@ -3,9 +3,9 @@
 
 html, body {
   height: 100%;
-  font-family: var(--font-font_family);
-  background: var(--color-bg_base);
-  color: var(--color-text_primary);
+  font-family: var(--font-font_family, sans-serif);
+  background: var(--color-bg_base, #121212);
+  color: var(--color-text_primary, #ffffff);
   overflow: hidden;
 }
 
