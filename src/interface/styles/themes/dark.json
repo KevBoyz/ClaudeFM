@@ -1,0 +1,24 @@
+{
+  "name": "dark",
+  "displayName": "Dark",
+  "colors": {
+    "bg_base":        "#121212",
+    "bg_surface":     "#181818",
+    "bg_elevated":    "#282828",
+    "bg_highlight":   "#3e3e3e",
+    "accent":         "#1db954",
+    "accent_hover":   "#1ed760",
+    "text_primary":   "#ffffff",
+    "text_secondary": "#b3b3b3",
+    "text_disabled":  "#535353",
+    "border":         "#282828",
+    "shadow_heavy":   "rgba(0,0,0,0.7)",
+    "error":          "#e22134",
+    "warning":        "#f59b23",
+    "success":        "#1db954"
+  },
+  "typography": {
+    "font_family":       "'Helvetica Neue', helvetica, arial, sans-serif",
+    "font_family_title": "'Helvetica Neue', helvetica, arial, sans-serif"
+  }
+}
