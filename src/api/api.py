@@ -1,4 +1,5 @@
 import json
+import socket
 import sqlite3
 from src.database.database import (
     get_all_tracks, get_track, insert_track, update_track_status,
@@ -9,6 +10,7 @@ from src.database.database import (
     delete_playlist, update_playlist_name, add_track_to_playlist, remove_track_from_playlist,
 )
 from src.database.config_manager import get_setting, set_setting, get_all_settings
+from src.database.file_manager import start_background_scan
 from src.models.track import Track
 from src.models.playlist import Playlist
 from src.services.lastfm_service import LastFMService
@@ -54,6 +56,11 @@ class ClaudeFMAPI:
         if self._lrclib is None:
             self._lrclib = LRCLibService(self._conn)
         return self._lrclib
+
+    def _lyrics_hook(self):
+        if get_setting(self._conn, "auto_fetch_lyrics") == "true":
+            return self._get_lrclib().fetch_and_embed_async
+        return None
 
     # ── Library ──────────────────────────────────────────────────────────────
 
@@ -140,9 +147,7 @@ class ClaudeFMAPI:
 
     def queue_download(self, track_id: int) -> str:
         try:
-            auto = get_setting(self._conn, "auto_fetch_lyrics") == "true"
-            hook = self._get_lrclib().fetch_and_embed_async if auto else None
-            self._get_youtube().queue_download(track_id, on_complete=hook)
+            self._get_youtube().queue_download(track_id, on_complete=self._lyrics_hook())
             return _ok()
         except Exception as e:
             log.error(f"queue_download: {e}", exc_info=True)
@@ -152,9 +157,7 @@ class ClaudeFMAPI:
         try:
             t = Track(title=title, artist=artist, album=album)
             track_id = insert_track(self._conn, t)
-            auto = get_setting(self._conn, "auto_fetch_lyrics") == "true"
-            hook = self._get_lrclib().fetch_and_embed_async if auto else None
-            self._get_youtube().queue_download(track_id, on_complete=hook)
+            self._get_youtube().queue_download(track_id, on_complete=self._lyrics_hook())
             return json.dumps({"success": True, "track_id": track_id})
         except Exception as e:
             return _err(str(e))
@@ -230,7 +233,7 @@ class ClaudeFMAPI:
         return json.dumps({
             "current_id": q.current_id(),
             "position": self._player.get_position(),
-            "paused": self._player._paused,
+            "paused": self._player.is_paused,
             "volume": self._player.get_volume(),
             "ended": q.ended,
         })
@@ -275,7 +278,6 @@ class ClaudeFMAPI:
 
     def rescan_library(self) -> str:
         try:
-            from src.database.file_manager import start_background_scan
             download_folder = get_setting(self._conn, "download_folder")
             try:
                 additional = json.loads(get_setting(self._conn, "additional_folders"))
@@ -358,7 +360,6 @@ class ClaudeFMAPI:
             return _err(str(e))
 
     def check_internet(self) -> str:
-        import socket
         try:
             socket.create_connection(("8.8.8.8", 53), timeout=3)
             return json.dumps({"online": True})

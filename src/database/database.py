@@ -2,7 +2,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from src.models.track import Track
-from src.models.playlist import Playlist, PlaylistTrack
+from src.models.playlist import Playlist
 
 _ALLOWED_ORDER_BY = {
     "date_downloaded DESC", "date_downloaded ASC",
@@ -243,15 +243,6 @@ def delete_oldest_auto_playlist(conn: sqlite3.Connection) -> None:
     if row:
         conn.execute("DELETE FROM playlists WHERE id=?", (row["id"],))
         conn.commit()
-
-
-def upsert_playlist_tracks(conn: sqlite3.Connection, playlist_id: int, track_ids: list[int]) -> None:
-    conn.execute("DELETE FROM playlist_tracks WHERE playlist_id=?", (playlist_id,))
-    conn.executemany(
-        "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?,?,?)",
-        [(playlist_id, tid, i) for i, tid in enumerate(track_ids)],
-    )
-    conn.commit()
 
 
 def get_playlist_tracks(conn: sqlite3.Connection, playlist_id: int) -> list[Track]:

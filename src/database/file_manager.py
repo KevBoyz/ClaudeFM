@@ -1,6 +1,9 @@
 import sqlite3
 import threading
 from pathlib import Path
+
+import mutagen
+
 from src.database.database import (
     get_all_tracks, insert_track, update_track_status
 )
@@ -13,18 +16,24 @@ log = get_logger("file_manager")
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".wav", ".opus"}
 
 
+def _get_tag(tags: dict, *keys: str, default: str) -> str:
+    for key in keys:
+        if key in tags:
+            return str(tags[key][0])
+    return default
+
+
 def _extract_metadata(path: Path) -> dict:
     title = path.stem
     artist = "Unknown Artist"
     duration = None
     try:
-        import mutagen
         meta = mutagen.File(path)
         if meta:
             duration = int(meta.info.length) if hasattr(meta, "info") else None
             tags = meta.tags or {}
-            title = str(tags.get("TIT2", [title])[0]) if "TIT2" in tags else str(tags.get("title", [title])[0]) if "title" in tags else title
-            artist = str(tags.get("TPE1", [artist])[0]) if "TPE1" in tags else str(tags.get("artist", [artist])[0]) if "artist" in tags else artist
+            title = _get_tag(tags, "TIT2", "title", default=title)
+            artist = _get_tag(tags, "TPE1", "artist", default=artist)
     except Exception as e:
         log.debug(f"mutagen failed for {path}: {e}")
     return {"title": title, "artist": artist, "duration": duration, "audio_format": path.suffix.lstrip(".")}
@@ -38,9 +47,9 @@ def quick_scan(conn: sqlite3.Connection) -> None:
             log.info(f"Marked missing: {track.file_path}")
 
 
-def full_scan(conn: sqlite3.Connection, folders: list[str]) -> tuple[int, int]:
+def full_scan(conn: sqlite3.Connection, folders: list[str]) -> int:
     existing = {t.file_path: t for t in get_all_tracks(conn) if t.file_path}
-    added, missing = 0, 0
+    added = 0
 
     for folder_str in folders:
         folder = Path(folder_str)
@@ -52,7 +61,6 @@ def full_scan(conn: sqlite3.Connection, folders: list[str]) -> tuple[int, int]:
                 continue
             path_str = str(path)
             if path_str in existing:
-                # Backfill duration if missing
                 if existing[path_str].duration is None:
                     meta = _extract_metadata(path)
                     if meta["duration"] is not None:
@@ -71,9 +79,9 @@ def full_scan(conn: sqlite3.Connection, folders: list[str]) -> tuple[int, int]:
             insert_track(conn, track)
             added += 1
 
-    log.info(f"Full scan complete: {added} added, {missing} missing")
-    event_bus.emit("library_scan_complete", {"added": added, "missing": missing})
-    return added, missing
+    log.info(f"Full scan complete: {added} added")
+    event_bus.emit("library_scan_complete", {"added": added})
+    return added
 
 
 def start_background_scan(conn: sqlite3.Connection, folders: list[str]) -> threading.Thread:

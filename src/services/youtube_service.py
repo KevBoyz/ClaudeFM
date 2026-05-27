@@ -1,9 +1,14 @@
 import re
+import shutil
 import sqlite3
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+import imageio_ffmpeg
+import yt_dlp
+
 from src.database.database import get_track, update_track_status
 from src.database.config_manager import get_setting
 from src.utils.logger import get_logger
@@ -103,8 +108,6 @@ class YouTubeService:
             event_bus.emit("download_error", {"track_id": track_id, "message": str(e)})
 
     def _run_ytdlp(self, query: str, download_dir: str, audio_format: str, track_id: int, base_name: str) -> str:
-        import yt_dlp
-
         filename_tmpl = base_name + ".%(ext)s"
         out_template = str(Path(download_dir) / filename_tmpl)
 
@@ -116,10 +119,14 @@ class YouTubeService:
                 event_bus.emit("download_progress", {"track_id": track_id, "percent": percent})
 
         try:
-            import imageio_ffmpeg
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         except Exception:
             ffmpeg_exe = None
+
+        js_runtime = next(
+            (r for r in ("node", "deno", "phantomjs") if shutil.which(r)),
+            None,
+        )
 
         ydl_opts = {
             "format": "bestaudio/best",
@@ -134,6 +141,8 @@ class YouTubeService:
             "progress_hooks": [progress_hook],
             "quiet": True,
         }
+        if js_runtime:
+            ydl_opts["js_runtimes"] = js_runtime
         if ffmpeg_exe:
             ydl_opts["ffmpeg_location"] = ffmpeg_exe
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

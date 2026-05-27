@@ -1,6 +1,9 @@
 import json
 import sqlite3
 from datetime import datetime, timedelta
+
+import pylast
+
 from src.utils.logger import get_logger
 
 log = get_logger("lastfm")
@@ -16,7 +19,6 @@ class LastFMService:
 
     def _get_network(self):
         if self._network is None:
-            import pylast
             self._network = pylast.LastFMNetwork(api_key=self._api_key)
         return self._network
 

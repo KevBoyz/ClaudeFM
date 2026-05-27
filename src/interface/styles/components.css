@@ -149,6 +149,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 3px; 
 .track-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
   border-radius: 6px; cursor: pointer; }
 .track-card:hover { background: var(--color-bg_elevated); }
+.track-card.playing { background: var(--color-bg_elevated); border-left: 3px solid var(--color-accent); padding-left: 9px; }
+.track-card.playing .track-card-title { color: var(--color-accent); }
 .track-card:hover .track-card-action { opacity: 1; }
 .track-card-thumb { width: 40px; height: 40px; background: var(--color-bg_highlight);
   border-radius: 3px; flex-shrink: 0; display: flex; align-items: center;

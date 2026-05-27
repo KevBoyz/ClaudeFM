@@ -7,4 +7,4 @@ class Artist(BaseModel):
     name: str = Field(min_length=1)
     mbid: str | None = None
     listeners: int | None = None
-    top_tracks: list[Track] = []
+    top_tracks: list[Track] = Field(default_factory=list)

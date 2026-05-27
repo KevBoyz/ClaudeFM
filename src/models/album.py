@@ -7,4 +7,4 @@ class Album(BaseModel):
     title: str = Field(min_length=1)
     artist: str = Field(min_length=1)
     mbid: str | None = None
-    tracks: list[Track] = []
+    tracks: list[Track] = Field(default_factory=list)

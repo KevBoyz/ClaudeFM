@@ -28,6 +28,7 @@ function _fmtDur(sec) {
 }
 
 function trackCard(track) {
+  const playing = player?.state?.track?.id === track.id;
   const downloaded = track.download_status === 'completed' && track.file_status === 'available';
   const downloading = track.download_status === 'downloading';
   const missing = track.file_status === 'missing' || track.file_status === 'corrupted';
@@ -41,10 +42,12 @@ function trackCard(track) {
     action = '<button class="track-card-action done" disabled>✓</button>';
   } else {
     action = `<button class="track-card-action"
-      onclick="event.stopPropagation();startLibraryDownload(this,${track.id},${JSON.stringify(track.title)},${JSON.stringify(track.artist)})">⬇</button>`;
+      data-title="${(track.title||'').replace(/"/g,'&quot;')}"
+      data-artist="${(track.artist||'').replace(/"/g,'&quot;')}"
+      onclick="event.stopPropagation();startLibraryDownload(this,${track.id})">⬇</button>`;
   }
 
-  return `<div class="track-card" data-track-id="${track.id}"
+  return `<div class="track-card${playing ? ' playing' : ''}" data-track-id="${track.id}"
       onclick="player.play(${track.id}, _pageQueue)">
     <div class="track-card-thumb">♪</div>
     <div class="track-card-info">
@@ -59,11 +62,22 @@ function trackCard(track) {
   </div>`;
 }
 
-function startLibraryDownload(btn, trackId, title, artist) {
+function startLibraryDownload(btn, trackId) {
+  const title = btn.dataset.title;
+  const artist = btn.dataset.artist;
   btn.textContent = '⏳';
   btn.disabled = true;
   downloads.queue(trackId, title, artist);
 }
+
+// Keep playing highlight in sync across all visible track cards
+document.addEventListener('player:changed', e => {
+  const currentId = e.detail?.track?.id ?? null;
+  document.querySelectorAll('.track-card[data-track-id]').forEach(card => {
+    const id = parseInt(card.dataset.trackId);
+    card.classList.toggle('playing', id === currentId);
+  });
+});
 
 // Listen for active downloads to keep visible track card buttons in sync
 document.addEventListener('downloads:changed', () => {

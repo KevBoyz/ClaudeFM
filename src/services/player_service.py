@@ -2,6 +2,7 @@ import array
 import subprocess
 import threading
 
+import imageio_ffmpeg
 import sounddevice as sd
 
 from src.utils.logger import get_logger
@@ -121,11 +122,22 @@ class PlayerService:
         with self._lock:
             return self._position
 
-    def _playback_thread(self, file_path: str, seek_position: float = 0.0) -> None:
-        import imageio_ffmpeg
+    @property
+    def is_paused(self) -> bool:
+        with self._lock:
+            return self._paused
 
+    def _playback_thread(self, file_path: str, seek_position: float = 0.0) -> None:
         proc = None
         try:
+            # Re-initialize PortAudio so the stream uses the current system default
+            # output device (handles headphones/speakers connected after app start).
+            try:
+                sd._terminate()
+                sd._initialize()
+            except Exception:
+                pass
+
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
             cmd = [ffmpeg_exe, "-nostdin"]
             if seek_position > 0:
