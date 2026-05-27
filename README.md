@@ -6,20 +6,22 @@ Desktop music player for Windows. Search metadata via Last.fm, download audio fr
 
 | Layer | Tech |
 |---|---|
-| UI | pywebview (HTML/CSS/JS) |
-| Audio playback | miniaudio |
-| Metadata | pylast (Last.fm API) |
-| Download | yt-dlp + ffmpeg |
-| Database | SQLite |
+| UI | pywebview 6.2.1 (HTML/CSS/JS SPA) |
+| Audio playback | miniaudio 1.71 |
+| Metadata | pylast 5.3.0 (Last.fm API) |
+| Download | yt-dlp + imageio[ffmpeg] |
+| Lyrics | lrcup (LRCLIB API) + mutagen |
+| Database | SQLite (WAL mode) |
 | Data models | pydantic v2 |
 | Backend | Python 3.11+ |
 
 ## How it works
 
-1. Search artist/track/album on Last.fm
-2. Download audio from YouTube as m4a (or mp3)
-3. Play from local library via miniaudio
-4. All state persisted in SQLite (`claudefm.db`)
+1. Search artist/track/album on Last.fm via the sidebar
+2. Download audio from YouTube as m4a or mp3
+3. Lyrics fetched automatically from LRCLIB after download (if enabled)
+4. Play from local library via miniaudio with seek and volume control
+5. All state persisted in SQLite (`claudefm.db`)
 
 ## Setup
 
@@ -43,7 +45,7 @@ Requires a Last.fm API key and a download folder — configure on first launch i
 .venv\Scripts\python.exe -m pytest tests/ -v
 ```
 
-49 tests across 11 modules covering models, database, services, API bridge, and utilities.
+93 tests across 13 modules covering models, database, services, API bridge, and utilities.
 
 ## Project structure
 
@@ -58,14 +60,16 @@ src/
   services/
     lastfm_service.py           # Last.fm search with 30-day cache
     youtube_service.py          # yt-dlp download + filename sanitization
-    player_service.py           # miniaudio playback + linear queue
+    player_service.py           # miniaudio playback + seek + volume + queue
+    lrclib_service.py           # LRCLIB lyrics fetch + mutagen embed
   api/
     api.py                      # pywebview js_api — all methods callable from JS
   utils/
     logger.py                   # Session-based rotating logger
-    event_bus.py                # Centralised window.evaluate_js push events
-  interface/                    # HTML/CSS/JS frontend (WIP)
+    event_bus.py                # Centralised push events (evaluate_js)
+  interface/                    # HTML/CSS/JS frontend (not yet built)
 tests/                          # pytest suite
+docs/superpowers/               # Specs and implementation plans
 ```
 
 ## Configuration defaults
@@ -77,3 +81,5 @@ tests/                          # pytest suite
 | `download_concurrency` | `2` |
 | `theme` | `dark` |
 | `cache_enabled` | `true` |
+| `auto_fetch_lyrics` | `true` |
+| `player_volume` | `1.0` |
