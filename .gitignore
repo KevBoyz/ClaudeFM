@@ -223,4 +223,6 @@ __marimo__/
 .superpowers
 logs
 .claude/settings.json
-.db
+*.db
+*.db-shm
+*.db-wal

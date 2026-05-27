@@ -110,19 +110,34 @@ const settingsPage = (() => {
     });
 
     document.getElementById('set-save').addEventListener('click', async () => {
-      const fmt = document.querySelector('[name=fmt]:checked')?.value || 'm4a';
-      await Promise.all([
-        api.save_setting('lastfm_api_key',       document.getElementById('set-apikey').value.trim()),
-        api.save_setting('download_folder',       document.getElementById('set-folder').value.trim()),
-        api.save_setting('audio_format',          fmt),
-        api.save_setting('auto_fetch_lyrics',     document.getElementById('set-autolyr').checked ? 'true' : 'false'),
-        api.save_setting('search_results_limit',  document.getElementById('set-limit').value),
-        api.save_setting('cache_enabled',         document.getElementById('set-cache').checked ? 'true' : 'false'),
-        api.save_setting('theme',                 document.getElementById('set-theme').value),
-      ]);
-      const theme = document.getElementById('set-theme').value;
-      ThemeLoader.load(theme);
-      toast.show('Settings saved', 'success', 2000);
+      const btn = document.getElementById('set-save');
+      btn.disabled = true;
+      try {
+        const oldFolder = _settings.download_folder || '';
+        const newFolder = document.getElementById('set-folder').value.trim();
+        const fmt = document.querySelector('[name=fmt]:checked')?.value || 'm4a';
+        await Promise.all([
+          api.save_setting('lastfm_api_key',       document.getElementById('set-apikey').value.trim()),
+          api.save_setting('download_folder',       newFolder),
+          api.save_setting('audio_format',          fmt),
+          api.save_setting('auto_fetch_lyrics',     document.getElementById('set-autolyr').checked ? 'true' : 'false'),
+          api.save_setting('search_results_limit',  document.getElementById('set-limit').value),
+          api.save_setting('cache_enabled',         document.getElementById('set-cache').checked ? 'true' : 'false'),
+          api.save_setting('theme',                 document.getElementById('set-theme').value),
+        ]);
+        ThemeLoader.load(document.getElementById('set-theme').value);
+        _settings.download_folder = newFolder;
+        if (newFolder && newFolder !== oldFolder) {
+          api.rescan_library();
+          toast.show('Settings saved — scanning library…', 'success', 3000);
+        } else {
+          toast.show('Settings saved', 'success', 2000);
+        }
+      } catch (e) {
+        toast.show('Failed to save settings: ' + (e.message || e), 'error', 5000);
+      } finally {
+        btn.disabled = false;
+      }
     });
 
     if (params.highlight) {

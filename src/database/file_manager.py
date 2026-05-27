@@ -39,7 +39,7 @@ def quick_scan(conn: sqlite3.Connection) -> None:
 
 
 def full_scan(conn: sqlite3.Connection, folders: list[str]) -> tuple[int, int]:
-    existing_paths = {t.file_path for t in get_all_tracks(conn) if t.file_path}
+    existing = {t.file_path: t for t in get_all_tracks(conn) if t.file_path}
     added, missing = 0, 0
 
     for folder_str in folders:
@@ -51,7 +51,12 @@ def full_scan(conn: sqlite3.Connection, folders: list[str]) -> tuple[int, int]:
             if path.suffix.lower() not in AUDIO_EXTENSIONS:
                 continue
             path_str = str(path)
-            if path_str in existing_paths:
+            if path_str in existing:
+                # Backfill duration if missing
+                if existing[path_str].duration is None:
+                    meta = _extract_metadata(path)
+                    if meta["duration"] is not None:
+                        update_track_status(conn, existing[path_str].id, duration=meta["duration"])
                 continue
             meta = _extract_metadata(path)
             track = Track(

@@ -114,9 +114,15 @@ const player = (() => {
     } catch (_) {}
   }
 
-  api.on('playback_ended', () => onEnded());
-  api.on('queue_ended',    () => onQueueEnded());
-  api.on('restore_player', (e) => onRestore(e.track_id, e.position));
+  api.on('playback_ended',  () => onEnded());
+  api.on('queue_ended',     () => onQueueEnded());
+  api.on('restore_player',  (e) => onRestore(e.track_id, e.position));
+  api.on('playback_failed', (e) => {
+    state.playing = false;
+    _stopTick();
+    toast.show(`Playback failed: ${e.message || 'cannot decode file'}`, 'error', 5000);
+    document.dispatchEvent(new CustomEvent('player:changed', { detail: { ...state } }));
+  });
 
   return { state, play, pause, resume, next, prev, seek, setVolume, onEnded, onQueueEnded, onRestore };
 })();

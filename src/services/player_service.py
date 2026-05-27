@@ -1,11 +1,19 @@
 import array
+import subprocess
 import threading
+
+import sounddevice as sd
+
 from src.utils.logger import get_logger
 from src.utils.event_bus import event_bus
 
 log = get_logger("player")
 
 _SAMPLE_RATE = 44100
+_CHANNELS = 2
+_CHUNK_FRAMES = 2048
+_BYTES_PER_FRAME = 4  # s16le stereo: 2 ch × 2 bytes
+_SILENCE = bytes(_CHUNK_FRAMES * _BYTES_PER_FRAME)
 
 
 class Queue:
@@ -53,25 +61,36 @@ class Queue:
 class PlayerService:
     def __init__(self):
         self.queue = Queue()
-        self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
         self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._proc: subprocess.Popen | None = None
         self._position: float = 0.0
         self._paused: bool = False
         self._volume: float = 1.0
-        self._lock = threading.Lock()
         self._current_file: str | None = None
 
     def play(self, file_path: str, seek_position: float = 0.0) -> None:
         self._stop_event.set()
+        # Close current proc to unblock any pending stdout.read()
+        with self._lock:
+            if self._proc is not None:
+                try:
+                    self._proc.stdout.close()
+                except Exception:
+                    pass
+                try:
+                    self._proc.terminate()
+                except Exception:
+                    pass
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1)
+            self._thread.join(timeout=2)
         self._stop_event.clear()
         self._position = seek_position
         self._paused = False
         self._current_file = file_path
-        seek_frame = int(seek_position * _SAMPLE_RATE)
         self._thread = threading.Thread(
-            target=self._playback_thread, args=(file_path, seek_frame), daemon=True
+            target=self._playback_thread, args=(file_path, seek_position), daemon=True
         )
         self._thread.start()
 
@@ -102,46 +121,69 @@ class PlayerService:
         with self._lock:
             return self._position
 
-    def _audio_gen(self, stream):
-        """Wrap stream: proper pause (silence without consuming) + volume scaling."""
-        silence: bytes | None = None
-        for chunk in stream:
-            if silence is None:
-                silence = bytes(len(chunk))
-            # Hold current chunk while paused — yield silence without advancing stream.
-            while True:
-                if self._stop_event.is_set():
-                    return
-                with self._lock:
-                    paused = self._paused
-                    vol = self._volume
-                if paused:
-                    yield silence
-                else:
-                    break
-            if vol != 1.0:
-                buf = array.array('h', chunk)
-                for i in range(len(buf)):
-                    buf[i] = max(-32768, min(32767, int(buf[i] * vol)))
-                yield buf.tobytes()
-            else:
-                yield chunk
+    def _playback_thread(self, file_path: str, seek_position: float = 0.0) -> None:
+        import imageio_ffmpeg
 
-    def _playback_thread(self, file_path: str, seek_frame: int = 0) -> None:
+        proc = None
         try:
-            import miniaudio
-            import time
-            stream = miniaudio.stream_file(file_path, seek_frame=seek_frame)
-            with miniaudio.PlaybackDevice() as device:
-                device.start(self._audio_gen(stream))
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            cmd = [ffmpeg_exe, "-nostdin"]
+            if seek_position > 0:
+                cmd += ["-ss", str(seek_position)]
+            cmd += ["-i", file_path, "-f", "s16le", "-ar", str(_SAMPLE_RATE), "-ac", str(_CHANNELS), "-"]
+
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            with self._lock:
+                self._proc = proc
+
+            with sd.RawOutputStream(
+                samplerate=_SAMPLE_RATE, channels=_CHANNELS, dtype="int16", blocksize=_CHUNK_FRAMES
+            ) as stream:
                 while not self._stop_event.is_set():
                     with self._lock:
                         paused = self._paused
-                    if not paused:
-                        with self._lock:
-                            self._position += 0.1
-                    time.sleep(0.1)
-            event_bus.emit("playback_ended", {})
+                        vol = self._volume
+
+                    if paused:
+                        stream.write(_SILENCE)
+                        continue
+
+                    data = proc.stdout.read(_CHUNK_FRAMES * _BYTES_PER_FRAME)
+                    if not data:
+                        break  # stream exhausted — natural end
+
+                    if vol != 1.0:
+                        arr = array.array("h", data)
+                        for i in range(len(arr)):
+                            arr[i] = max(-32768, min(32767, int(arr[i] * vol)))
+                        data = arr.tobytes()
+
+                    needed = _CHUNK_FRAMES * _BYTES_PER_FRAME
+                    if len(data) < needed:
+                        data += bytes(needed - len(data))
+
+                    stream.write(data)
+
+                    with self._lock:
+                        self._position += _CHUNK_FRAMES / _SAMPLE_RATE
+
+            if not self._stop_event.is_set():
+                event_bus.emit("playback_ended", {})
+
         except Exception as e:
             log.error(f"Playback error: {e}", exc_info=True)
-            event_bus.emit("playback_ended", {})
+            event_bus.emit("playback_failed", {"message": str(e)})
+        finally:
+            with self._lock:
+                if self._proc is proc:
+                    self._proc = None
+            if proc is not None:
+                try:
+                    proc.stdout.close()
+                except Exception:
+                    pass
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                except Exception:
+                    pass

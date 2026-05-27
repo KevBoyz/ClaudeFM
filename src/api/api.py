@@ -273,6 +273,21 @@ class ClaudeFMAPI:
         except Exception as e:
             return _err(str(e))
 
+    def rescan_library(self) -> str:
+        try:
+            from src.database.file_manager import start_background_scan
+            download_folder = get_setting(self._conn, "download_folder")
+            try:
+                additional = json.loads(get_setting(self._conn, "additional_folders"))
+            except (json.JSONDecodeError, TypeError):
+                additional = []
+            folders = ([download_folder] if download_folder else []) + additional
+            if folders:
+                start_background_scan(self._conn, folders)
+            return _ok()
+        except Exception as e:
+            return _err(str(e))
+
     # ── Playlist mutations ────────────────────────────────────────────────────
 
     def delete_playlist(self, playlist_id: int) -> str:

@@ -89,6 +89,7 @@ const api = (() => {
     // Settings
     get_settings:             ()         => _call('get_settings'),
     save_setting:             (key, val) => _call('save_setting', key, String(val)),
+    rescan_library:           ()         => _call('rescan_library'),
     check_lastfm_connection:  ()         => _call('check_lastfm_connection'),
   };
 })();

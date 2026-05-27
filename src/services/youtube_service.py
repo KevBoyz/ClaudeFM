@@ -10,6 +10,18 @@ from src.utils.event_bus import event_bus
 
 log = get_logger("youtube")
 
+
+def _read_duration(file_path: str) -> int | None:
+    try:
+        import mutagen
+        meta = mutagen.File(file_path)
+        if meta and hasattr(meta, "info"):
+            return int(meta.info.length)
+    except Exception:
+        pass
+    return None
+
+
 _WINDOWS_INVALID = re.compile(r'[<>:"/\\|?*]')
 _RESERVED = {"CON", "PRN", "AUX", "NUL",
              "COM1","COM2","COM3","COM4","COM5","COM6","COM7","COM8","COM9",
@@ -48,13 +60,16 @@ class YouTubeService:
             download_dir = get_setting(self._conn, "download_folder")
             audio_format = get_setting(self._conn, "audio_format")
             query = f"{track.artist} - {track.title}"
-            out_path = self._run_ytdlp(query, download_dir, audio_format, track_id)
+            base_name = sanitize_filename(f"{track.artist} - {track.title}")
+            out_path = self._run_ytdlp(query, download_dir, audio_format, track_id, base_name)
+            duration = _read_duration(out_path)
             update_track_status(
                 self._conn, track_id,
                 download_status="completed",
                 file_status="available",
                 file_path=out_path,
                 youtube_url=f"ytsearch:{query}",
+                duration=duration,
             )
             event_bus.emit("download_complete", {"track_id": track_id})
             if on_complete:
@@ -68,10 +83,10 @@ class YouTubeService:
             )
             event_bus.emit("download_error", {"track_id": track_id, "message": str(e)})
 
-    def _run_ytdlp(self, query: str, download_dir: str, audio_format: str, track_id: int) -> str:
+    def _run_ytdlp(self, query: str, download_dir: str, audio_format: str, track_id: int, base_name: str) -> str:
         import yt_dlp
 
-        filename_tmpl = sanitize_filename("%(artist)s - %(title)s") + ".%(ext)s"
+        filename_tmpl = base_name + ".%(ext)s"
         out_template = str(Path(download_dir) / filename_tmpl)
 
         def progress_hook(d):
@@ -80,6 +95,12 @@ class YouTubeService:
                 downloaded = d.get("downloaded_bytes", 0)
                 percent = int(downloaded / total * 100)
                 event_bus.emit("download_progress", {"track_id": track_id, "percent": percent})
+
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            ffmpeg_exe = None
 
         ydl_opts = {
             "format": "bestaudio/best",
@@ -90,11 +111,19 @@ class YouTubeService:
             }],
             "default_search": "ytsearch",
             "noplaylist": True,
+            "playlist_items": "1",
             "progress_hooks": [progress_hook],
             "quiet": True,
         }
+        if ffmpeg_exe:
+            ydl_opts["ffmpeg_location"] = ffmpeg_exe
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=True)
+            # ytsearch returns a playlist-like dict; unwrap first entry
+            if 'entries' in info:
+                info = next((e for e in info['entries'] if e), None)
+                if not info:
+                    raise ValueError("No search results found")
             filename = ydl.prepare_filename(info)
             final = Path(filename).with_suffix(f".{audio_format}")
             if not final.exists():

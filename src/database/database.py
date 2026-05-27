@@ -119,6 +119,7 @@ def update_track_status(
     file_status: str | None = None,
     file_path: str | None = None,
     youtube_url: str | None = None,
+    duration: int | None = None,
 ) -> None:
     fields, values = [], []
     for col, val in [
@@ -127,6 +128,7 @@ def update_track_status(
         ("file_status", file_status),
         ("file_path", file_path),
         ("youtube_url", youtube_url),
+        ("duration", duration),
     ]:
         if val is not None:
             fields.append(f"{col}=?")

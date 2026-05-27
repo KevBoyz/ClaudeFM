@@ -2,7 +2,7 @@ import sqlite3
 
 DEFAULTS: dict[str, str] = {
     "lastfm_api_key": "",
-    "download_folder": "",
+    "download_folder": "C:\\music",
     "additional_folders": "[]",
     "audio_format": "m4a",
     "cache_enabled": "true",

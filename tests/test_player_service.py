@@ -1,4 +1,3 @@
-from unittest.mock import patch, MagicMock
 from src.services.player_service import PlayerService, Queue
 
 
@@ -32,14 +31,8 @@ def test_queue_ended_flag():
     assert q.ended
 
 
-def test_player_service_play_calls_miniaudio(tmp_path):
-    f = tmp_path / "song.m4a"
-    f.write_bytes(b"fake audio")
-    with patch("miniaudio.stream_file") as mock_stream:
-        mock_stream.return_value = iter([b"chunk"])
-        with patch("miniaudio.PlaybackDevice") as mock_dev:
-            mock_dev.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mock_dev.return_value.__exit__ = MagicMock(return_value=False)
-            svc = PlayerService()
-            # Just verify it doesn't raise on construction
-            assert svc is not None
+def test_player_service_construction():
+    svc = PlayerService()
+    assert svc is not None
+    assert svc.get_position() == 0.0
+    assert svc.get_volume() == 1.0

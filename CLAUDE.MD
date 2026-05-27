@@ -7,7 +7,7 @@ Desktop music player for Windows: search Last.fm → download from YouTube → p
 | Layer | Package | Note |
 |---|---|---|
 | UI | pywebview 6.2.1 | HTML/CSS/JS SPA, js_api bridge |
-| Audio | miniaudio 1.71 | Playback in daemon thread |
+| Audio | sounddevice 0.5.1 | Playback via PortAudio blocking write loop |
 | Metadata | pylast 5.3.0 | Last.fm API, 30-day cache |
 | Download | yt-dlp 2024.5.27 | ThreadPoolExecutor, concurrency=2 |
 | Audio convert | imageio[ffmpeg] | pip dep, not vendored binary |
@@ -50,7 +50,7 @@ src/
   services/
     lastfm_service.py           # pylast search + cache table + get_artist_top_tracks
     youtube_service.py          # yt-dlp download + sanitize_filename + ThreadPoolExecutor
-    player_service.py           # miniaudio playback + Queue + seek + volume + threading.Lock
+    player_service.py           # sounddevice playback + Queue + seek + volume + threading.Lock
     lrclib_service.py           # LRCLIB fetch + mutagen embed + async batch fetch
   api/
     api.py                      # ClaudeFMAPI — all methods callable from JS via pywebview js_api
@@ -115,9 +115,10 @@ Push events via `event_bus.emit(type, payload)` → `window.evaluate_js("onEvent
 | `imageio[ffmpeg]` not vendored binary | pip dep is simpler, no vendor dir needed |
 | Pydantic models mirror DB schema exactly | No conversion logic between layers; `date_downloaded` parsed from ISO string in `_row_to_track` |
 | `auto` playlists capped at 15 | `delete_oldest_auto_playlist` called before inserting 16th |
-| Seek via stream restart (`stream_file(path, seek_frame=N)`) | miniaudio has no mid-stream seek; restart from frame offset is the supported approach |
-| Volume via PCM array scaling in `_audio_gen` | No miniaudio volume API; apply `array.array('h')` 16-bit scaling in the generator wrapper |
-| Pause yields silence bytes in inner loop | Keeps stream position intact; consuming the next chunk would advance position while paused |
+| Seek via stream restart (ffmpeg `-ss`) | sounddevice has no mid-stream seek; kill proc, restart ffmpeg with `-ss offset` |
+| Volume via PCM array scaling | No sounddevice volume API; apply `array.array('h')` 16-bit scaling before each write |
+| Pause writes silence to stream | Keeps stream alive; real data not consumed so position doesn't advance while paused |
+| `_stop_event` + `_proc` stored on service | `play()` terminates old proc immediately to unblock `stdout.read()` in old thread |
 | `on_complete` callback in `YouTubeService.queue_download` | Allows `LRCLibService.fetch_and_embed_async` to be injected post-download without coupling layers |
 
 ## In Progress / Next Steps
