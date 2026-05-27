@@ -1,8 +1,11 @@
+import array
 import threading
 from src.utils.logger import get_logger
 from src.utils.event_bus import event_bus
 
 log = get_logger("player")
+
+_SAMPLE_RATE = 44100
 
 
 class Queue:
@@ -54,17 +57,21 @@ class PlayerService:
         self._stop_event = threading.Event()
         self._position: float = 0.0
         self._paused: bool = False
+        self._volume: float = 1.0
         self._lock = threading.Lock()
+        self._current_file: str | None = None
 
-    def play(self, file_path: str) -> None:
+    def play(self, file_path: str, seek_position: float = 0.0) -> None:
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1)
         self._stop_event.clear()
-        self._position = 0.0
+        self._position = seek_position
         self._paused = False
+        self._current_file = file_path
+        seek_frame = int(seek_position * _SAMPLE_RATE)
         self._thread = threading.Thread(
-            target=self._playback_thread, args=(file_path,), daemon=True
+            target=self._playback_thread, args=(file_path, seek_frame), daemon=True
         )
         self._thread.start()
 
@@ -79,25 +86,60 @@ class PlayerService:
     def stop(self) -> None:
         self._stop_event.set()
 
+    def seek(self, position: float) -> None:
+        if self._current_file:
+            self.play(self._current_file, seek_position=position)
+
+    def set_volume(self, level: float) -> None:
+        with self._lock:
+            self._volume = max(0.0, min(1.0, level))
+
+    def get_volume(self) -> float:
+        with self._lock:
+            return self._volume
+
     def get_position(self) -> float:
         with self._lock:
             return self._position
 
-    def _playback_thread(self, file_path: str) -> None:
+    def _audio_gen(self, stream):
+        """Wrap stream: proper pause (silence without consuming) + volume scaling."""
+        silence: bytes | None = None
+        for chunk in stream:
+            if silence is None:
+                silence = bytes(len(chunk))
+            # Hold current chunk while paused — yield silence without advancing stream.
+            while True:
+                if self._stop_event.is_set():
+                    return
+                with self._lock:
+                    paused = self._paused
+                    vol = self._volume
+                if paused:
+                    yield silence
+                else:
+                    break
+            if vol != 1.0:
+                buf = array.array('h', chunk)
+                for i in range(len(buf)):
+                    buf[i] = max(-32768, min(32767, int(buf[i] * vol)))
+                yield buf.tobytes()
+            else:
+                yield chunk
+
+    def _playback_thread(self, file_path: str, seek_frame: int = 0) -> None:
         try:
             import miniaudio
             import time
-            stream = miniaudio.stream_file(file_path)
+            stream = miniaudio.stream_file(file_path, seek_frame=seek_frame)
             with miniaudio.PlaybackDevice() as device:
-                device.start(stream)
+                device.start(self._audio_gen(stream))
                 while not self._stop_event.is_set():
                     with self._lock:
                         paused = self._paused
-                    if paused:
-                        time.sleep(0.1)
-                        continue
-                    with self._lock:
-                        self._position += 0.1
+                    if not paused:
+                        with self._lock:
+                            self._position += 0.1
                     time.sleep(0.1)
             event_bus.emit("playback_ended", {})
         except Exception as e:

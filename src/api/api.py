@@ -3,8 +3,9 @@ import sqlite3
 from src.database.database import (
     get_all_tracks, get_track, insert_track, update_track_status,
     get_tracks_by_artist, get_tracks_by_album, search_tracks_local,
+    get_all_artists, get_all_albums,
     insert_playlist, get_all_playlists, get_playlist_tracks,
-    upsert_playlist_tracks, get_auto_playlist_count, delete_oldest_auto_playlist,
+    get_auto_playlist_count, delete_oldest_auto_playlist,
     delete_playlist, update_playlist_name, add_track_to_playlist, remove_track_from_playlist,
 )
 from src.database.config_manager import get_setting, set_setting, get_all_settings
@@ -60,10 +61,32 @@ class ClaudeFMAPI:
         try:
             filters = json.loads(filters_json)
             order = filters.get("order_by", "date_downloaded DESC")
-            tracks = get_all_tracks(self._conn, order_by=order)
+            fmt = filters.get("audio_format")
+            tracks = get_all_tracks(self._conn, order_by=order, audio_format=fmt)
             return json.dumps([t.model_dump(mode="json") for t in tracks])
         except Exception as e:
             log.error(f"get_library: {e}", exc_info=True)
+            return _err(str(e))
+
+    def get_track(self, track_id: int) -> str:
+        try:
+            track = get_track(self._conn, track_id)
+            if not track:
+                return _err("Track not found")
+            return _ok(track.model_dump(mode="json"))
+        except Exception as e:
+            return _err(str(e))
+
+    def get_artists(self) -> str:
+        try:
+            return json.dumps(get_all_artists(self._conn))
+        except Exception as e:
+            return _err(str(e))
+
+    def get_albums(self) -> str:
+        try:
+            return json.dumps(get_all_albums(self._conn))
+        except Exception as e:
             return _err(str(e))
 
     def get_tracks_by_artist(self, artist: str) -> str:
@@ -123,15 +146,6 @@ class ClaudeFMAPI:
             return _ok()
         except Exception as e:
             log.error(f"queue_download: {e}", exc_info=True)
-            return _err(str(e))
-
-    def download_track(self, track_id: int) -> str:
-        try:
-            auto = get_setting(self._conn, "auto_fetch_lyrics") == "true"
-            hook = self._get_lrclib().fetch_and_embed_async if auto else None
-            self._get_youtube().queue_download(track_id, on_complete=hook)
-            return _ok()
-        except Exception as e:
             return _err(str(e))
 
     def download_lastfm_track(self, title: str, artist: str, album: str | None = None) -> str:
@@ -194,12 +208,30 @@ class ClaudeFMAPI:
         except Exception as e:
             return _err(str(e))
 
+    def seek(self, position: float) -> str:
+        try:
+            self._player.seek(position)
+            return _ok()
+        except Exception as e:
+            return _err(str(e))
+
+    def get_position(self) -> str:
+        return json.dumps({"position": self._player.get_position()})
+
+    def set_volume(self, level: float) -> str:
+        try:
+            self._player.set_volume(level)
+            return _ok()
+        except Exception as e:
+            return _err(str(e))
+
     def get_player_state(self) -> str:
         q = self._player.queue
         return json.dumps({
             "current_id": q.current_id(),
             "position": self._player.get_position(),
             "paused": self._player._paused,
+            "volume": self._player.get_volume(),
             "ended": q.ended,
         })
 
@@ -226,14 +258,6 @@ class ClaudeFMAPI:
         try:
             tracks = get_playlist_tracks(self._conn, playlist_id)
             return json.dumps([t.model_dump(mode="json") for t in tracks])
-        except Exception as e:
-            return _err(str(e))
-
-    def set_playlist_tracks(self, playlist_id: int, track_ids_json: str) -> str:
-        try:
-            track_ids = json.loads(track_ids_json)
-            upsert_playlist_tracks(self._conn, playlist_id, track_ids)
-            return _ok()
         except Exception as e:
             return _err(str(e))
 
@@ -309,7 +333,14 @@ class ClaudeFMAPI:
         except Exception as e:
             return _err(str(e))
 
-    # ── Connectivity check ────────────────────────────────────────────────────
+    # ── Connectivity / account checks ─────────────────────────────────────────
+
+    def check_lastfm_connection(self) -> str:
+        try:
+            self._get_lastfm().search("test", "track", limit=1)
+            return _ok()
+        except Exception as e:
+            return _err(str(e))
 
     def check_internet(self) -> str:
         import socket

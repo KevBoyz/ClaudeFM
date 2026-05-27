@@ -8,6 +8,7 @@ _ALLOWED_ORDER_BY = {
     "date_downloaded DESC", "date_downloaded ASC",
     "title ASC", "title DESC",
     "artist ASC", "artist DESC",
+    "duration ASC", "duration DESC",
 }
 
 _DB_PATH = Path(__file__).parent.parent.parent / "claudefm.db"
@@ -149,10 +150,20 @@ def get_tracks_without_lyrics(conn: sqlite3.Connection) -> list[Track]:
     return [_row_to_track(r) for r in rows]
 
 
-def get_all_tracks(conn: sqlite3.Connection, order_by: str = "date_downloaded DESC") -> list[Track]:
+def get_all_tracks(
+    conn: sqlite3.Connection,
+    order_by: str = "date_downloaded DESC",
+    audio_format: str | None = None,
+) -> list[Track]:
     if order_by not in _ALLOWED_ORDER_BY:
         order_by = "date_downloaded DESC"
-    rows = conn.execute(f"SELECT * FROM tracks ORDER BY {order_by}").fetchall()
+    if audio_format:
+        rows = conn.execute(
+            f"SELECT * FROM tracks WHERE audio_format=? ORDER BY {order_by}",
+            (audio_format,),
+        ).fetchall()
+    else:
+        rows = conn.execute(f"SELECT * FROM tracks ORDER BY {order_by}").fetchall()
     return [_row_to_track(r) for r in rows]
 
 
@@ -170,6 +181,23 @@ def get_tracks_by_album(conn: sqlite3.Connection, album: str, artist: str) -> li
         (album, artist)
     ).fetchall()
     return [_row_to_track(r) for r in rows]
+
+
+def get_all_artists(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        "SELECT artist, COUNT(*) as track_count FROM tracks GROUP BY LOWER(artist) ORDER BY LOWER(artist) ASC"
+    ).fetchall()
+    return [{"artist": r["artist"], "track_count": r["track_count"]} for r in rows]
+
+
+def get_all_albums(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        """SELECT album, artist, COUNT(*) as track_count
+           FROM tracks WHERE album IS NOT NULL
+           GROUP BY LOWER(album), LOWER(artist)
+           ORDER BY LOWER(album) ASC"""
+    ).fetchall()
+    return [{"album": r["album"], "artist": r["artist"], "track_count": r["track_count"]} for r in rows]
 
 
 def search_tracks_local(conn: sqlite3.Connection, query: str, limit: int = 5) -> list[Track]:
