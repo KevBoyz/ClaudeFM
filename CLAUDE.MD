@@ -57,7 +57,22 @@ src/
   utils/
     logger.py                   # Session-based rotating logger (10 sessions)
     event_bus.py                # Singleton: emit(type, payload) → window.evaluate_js
-  interface/                    # TODO: frontend not yet built (plan: docs/superpowers/plans/2026-05-26-frontend.md)
+  interface/
+    home.html                   # Single HTML entry point — loads all scripts/styles
+    scripts/
+      player.js                 # Player state machine + queue + event dispatch
+      player-bar.js             # Bottom playback bar UI
+      downloads.js              # Download queue tracking + history
+      lyrics.js / lyrics-panel.js # Lyrics fetch + panel open/close
+      topbar.js                 # Activity badge (downloads + lyrics), notification panel
+      sidebar.js                # Nav + search results rendering
+      context-menu.js           # Right-click actions
+      components.js             # Shared: trackCard(), artistCard(), albumCard(), _localIdx
+      keyboard.js               # Space/arrow shortcuts
+      router.js                 # Hash-based SPA router
+      pages/                    # home, library, artists, albums, playlists, playlist-detail,
+                                #   lastfm-artist, lastfm-album, settings
+    styles/                     # Per-component CSS files
 tests/                          # pytest suite, conftest.py has db_conn + tmp_music_dir fixtures
 docs/superpowers/specs/         # Design + lyrics + frontend specs
 docs/superpowers/plans/         # Implementation plans
@@ -120,10 +135,11 @@ Push events via `event_bus.emit(type, payload)` → `window.evaluate_js("onEvent
 | Pause writes silence to stream | Keeps stream alive; real data not consumed so position doesn't advance while paused |
 | `_stop_event` + `_proc` stored on service | `play()` terminates old proc immediately to unblock `stdout.read()` in old thread |
 | `on_complete` callback in `YouTubeService.queue_download` | Allows `LRCLibService.fetch_and_embed_async` to be injected post-download without coupling layers |
-
-## In Progress / Next Steps
-
-1. **Frontend** — `src/interface/` empty
-   - Plan: `docs/superpowers/plans/2026-05-26-frontend.md` (25 tasks)
-   - Spec: `docs/superpowers/specs/2026-05-26-frontend.md`
-   - Vanilla JS SPA, no framework, pywebview js_api bridge
+| `_active` set + `threading.Lock` in `YouTubeService` | Prevents concurrent workers downloading the same track_id (e.g. album batch) |
+| `insert_track` dedup by title+artist | `SELECT` before `INSERT` returns existing id; prevents duplicate rows on concurrent album downloads |
+| `_lyrics_hook()` method on `ClaudeFMAPI` | Single place for auto_fetch_lyrics check; used by both `queue_download` and `download_lastfm_track` |
+| `is_paused` property on `PlayerService` | Thread-safe read via `_lock`; avoids external modules accessing `_paused` directly |
+| PortAudio reinit before each `_playback_thread` | `sd._terminate()` + `sd._initialize()` forces PortAudio to pick up OS default device changes (headphones connected after app start) |
+| JS runtime auto-detection in `_run_ytdlp` | `shutil.which` checks node/deno/phantomjs at download time; passes to yt-dlp if found to enable full format support |
+| `_localIdx` Map in `components.js` | O(1) local availability check per search result; avoids N API calls when rendering Last.fm results |
+| `player:changed` listener in `components.js` | Updates `.playing` class on visible track cards without re-rendering the list |
