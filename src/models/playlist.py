@@ -1,13 +1,13 @@
 from __future__ import annotations
 from datetime import datetime
-from typing import Literal
 from pydantic import BaseModel, Field
+from src.models.enums import PlaylistType
 
 
 class Playlist(BaseModel):
     id: int | None = None
     name: str = Field(min_length=1)
-    type: Literal["auto", "manual"]
+    type: PlaylistType
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

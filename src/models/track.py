@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import datetime
-from typing import Literal
 from pydantic import BaseModel, Field
+from src.models.enums import DownloadStatus, FileStatus, LyricsStatus
 
 
 class Track(BaseModel):
@@ -14,8 +14,7 @@ class Track(BaseModel):
     audio_format: str | None = None
     youtube_url: str | None = None
     date_downloaded: datetime | None = None
-    download_status: Literal["pending", "downloading",
-                             "completed", "failed"] = "pending"
+    download_status: DownloadStatus = DownloadStatus.PENDING
     download_error: str | None = None
-    file_status: Literal["available", "missing", "corrupted"] = "available"
-    lyrics_status: str = "not_fetched"
+    file_status: FileStatus = FileStatus.AVAILABLE
+    lyrics_status: LyricsStatus = LyricsStatus.NOT_FETCHED
