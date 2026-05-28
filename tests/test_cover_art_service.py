@@ -108,8 +108,9 @@ def test_fetcher_propagates_exceptions(mocker):
 
 
 from src.services.cover_art_service import CoverArtService
-from src.database.database import init_db, insert_track
+from src.database.database import init_db, insert_track, get_track
 from src.models.track import Track
+from datetime import datetime
 import time
 
 
@@ -128,7 +129,7 @@ def test_service_fetches_and_embeds_cover(db_conn):
 
     result = svc.fetch_and_embed(tid)
 
-    assert result is True
+    assert result == "embedded"
     mock_lastfm.get_cover_image_url.assert_called_once_with("Radiohead", "OK Computer")
     svc._fetcher.fetch_bytes.assert_called_once_with('https://cdn.com/cover.jpg')
     svc._embedder.embed.assert_called_once_with("/tmp/song.m4a", b'img')
@@ -163,7 +164,7 @@ def test_service_returns_false_when_no_url(db_conn):
     svc = CoverArtService(db_conn, mock_lastfm)
     svc._embedder = MagicMock()
 
-    assert svc.fetch_and_embed(tid) is False
+    assert svc.fetch_and_embed(tid) == "not_found"
     svc._embedder.embed.assert_not_called()
 
 
@@ -173,7 +174,7 @@ def test_service_returns_false_when_no_file_path(db_conn):
     mock_lastfm = MagicMock()
     svc = CoverArtService(db_conn, mock_lastfm)
 
-    assert svc.fetch_and_embed(tid) is False
+    assert svc.fetch_and_embed(tid) == "not_found"
     mock_lastfm.get_cover_image_url.assert_not_called()
 
 
@@ -190,7 +191,7 @@ def test_service_returns_false_on_fetch_error(db_conn):
     svc._fetcher.fetch_bytes.side_effect = OSError("network error")
     svc._embedder = MagicMock()
 
-    assert svc.fetch_and_embed(tid) is False
+    assert svc.fetch_and_embed(tid) == "not_found"
     svc._embedder.embed.assert_not_called()
 
 
@@ -208,7 +209,7 @@ def test_service_returns_false_on_embed_error(db_conn):
     svc._embedder = MagicMock()
     svc._embedder.embed.side_effect = Exception("mutagen error")
 
-    assert svc.fetch_and_embed(tid) is False
+    assert svc.fetch_and_embed(tid) == "not_found"
 
 
 def test_service_fetch_and_embed_async_runs_in_thread(db_conn, mocker):
@@ -219,3 +220,67 @@ def test_service_fetch_and_embed_async_runs_in_thread(db_conn, mocker):
     svc.fetch_and_embed_async(99)
     time.sleep(0.05)
     mock_embed.assert_called_once_with(99)
+
+
+def test_fetch_and_embed_writes_embedded_status(db_conn, tmp_path):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(
+        title="Song", artist="Artist", album="Album",
+        download_status="completed", file_status="available", file_path="/tmp/song.m4a",
+    ))
+
+    mock_lastfm = MagicMock()
+    mock_lastfm.get_cover_image_url.return_value = "https://example.com/cover.jpg"
+
+    svc = CoverArtService(db_conn, mock_lastfm)
+    svc._fetcher = MagicMock()
+    svc._fetcher.fetch_bytes.return_value = b"JPEG_DATA"
+    svc._embedder = MagicMock()
+
+    result = svc.fetch_and_embed(tid)
+
+    track = get_track(db_conn, tid)
+    assert result == "embedded"
+    assert track.artwork_status == "embedded"
+    assert track.artwork_fetched_at is not None
+
+
+def test_fetch_and_embed_writes_not_found_when_no_url(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(
+        title="Song", artist="Artist", album="Album",
+        download_status="completed", file_status="available", file_path="/tmp/song.m4a",
+    ))
+
+    mock_lastfm = MagicMock()
+    mock_lastfm.get_cover_image_url.return_value = None
+
+    svc = CoverArtService(db_conn, mock_lastfm)
+    result = svc.fetch_and_embed(tid)
+
+    track = get_track(db_conn, tid)
+    assert result == "not_found"
+    assert track.artwork_status == "not_found"
+    assert track.artwork_fetched_at is not None
+
+
+def test_fetch_and_embed_writes_not_found_on_download_error(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(
+        title="Song", artist="Artist", album="Album",
+        download_status="completed", file_status="available", file_path="/tmp/song.m4a",
+    ))
+
+    mock_lastfm = MagicMock()
+    mock_lastfm.get_cover_image_url.return_value = "https://example.com/cover.jpg"
+
+    svc = CoverArtService(db_conn, mock_lastfm)
+    svc._fetcher = MagicMock()
+    svc._fetcher.fetch_bytes.side_effect = OSError("network error")
+
+    result = svc.fetch_and_embed(tid)
+
+    track = get_track(db_conn, tid)
+    assert result == "not_found"
+    assert track.artwork_status == "not_found"
+    assert track.artwork_fetched_at is not None

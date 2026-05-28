@@ -1,12 +1,14 @@
 import sqlite3
 import threading
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.id3 import ID3, APIC, ID3NoHeaderError
 
-from src.database.database import get_track
+from src.database.database import get_track, update_artwork_status
+from src.models.enums import ArtworkStatus
 from src.utils.logger import get_logger
 
 log = get_logger("cover_art")
@@ -55,29 +57,33 @@ class CoverArtService:
         self._fetcher = CoverArtFetcher()
         self._embedder = CoverArtEmbedder()
 
-    def fetch_and_embed(self, track_id: int) -> bool:
+    def fetch_and_embed(self, track_id: int) -> str:
         track = get_track(self._conn, track_id)
         if not track or not track.file_path:
-            return False
+            return ArtworkStatus.NOT_FOUND
 
         url = self._lastfm.get_cover_image_url(track.artist, track.album)
         if not url:
             log.debug(f"No cover art URL for track {track_id} ({track.artist!r}/{track.album!r})")
-            return False
+            update_artwork_status(self._conn, track_id, ArtworkStatus.NOT_FOUND, datetime.now())
+            return ArtworkStatus.NOT_FOUND
 
         try:
             image_data = self._fetcher.fetch_bytes(url)
         except Exception as e:
             log.warning(f"Failed to download cover art for track {track_id}: {e}")
-            return False
+            update_artwork_status(self._conn, track_id, ArtworkStatus.NOT_FOUND, datetime.now())
+            return ArtworkStatus.NOT_FOUND
 
         try:
             self._embedder.embed(track.file_path, image_data)
         except Exception as e:
             log.warning(f"Failed to embed cover art for track {track_id}: {e}")
-            return False
+            update_artwork_status(self._conn, track_id, ArtworkStatus.NOT_FOUND, datetime.now())
+            return ArtworkStatus.NOT_FOUND
 
-        return True
+        update_artwork_status(self._conn, track_id, ArtworkStatus.EMBEDDED, datetime.now())
+        return ArtworkStatus.EMBEDDED
 
     def fetch_and_embed_async(self, track_id: int) -> None:
         threading.Thread(target=self.fetch_and_embed, args=(track_id,), daemon=True).start()
