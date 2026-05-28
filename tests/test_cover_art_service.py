@@ -67,3 +67,41 @@ def test_embed_mp3_creates_new_id3_when_no_header(mocker):
 def test_embed_unsupported_format_raises():
     with pytest.raises(ValueError, match="Unsupported format"):
         CoverArtEmbedder().embed('/music/song.flac', b'img')
+
+
+from src.services.cover_art_service import CoverArtFetcher
+
+
+def test_fetcher_returns_bytes(mocker):
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = b'fake_image'
+    mocker.patch(
+        'src.services.cover_art_service.urllib.request.urlopen',
+        return_value=mock_resp,
+    )
+    result = CoverArtFetcher().fetch_bytes('http://example.com/cover.jpg')
+    assert result == b'fake_image'
+    mock_resp.close.assert_called_once()
+
+
+def test_fetcher_sends_user_agent(mocker):
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = b''
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured['req'] = req
+        return mock_resp
+
+    mocker.patch('src.services.cover_art_service.urllib.request.urlopen', side_effect=fake_urlopen)
+    CoverArtFetcher().fetch_bytes('http://example.com/img.jpg')
+    assert any(k.lower() == 'user-agent' for k in captured['req'].headers)
+
+
+def test_fetcher_propagates_exceptions(mocker):
+    mocker.patch(
+        'src.services.cover_art_service.urllib.request.urlopen',
+        side_effect=OSError("timeout"),
+    )
+    with pytest.raises(OSError):
+        CoverArtFetcher().fetch_bytes('http://bad.url/img.jpg')

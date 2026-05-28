@@ -35,7 +35,15 @@ class CoverArtEmbedder:
 
 
 class CoverArtFetcher:
-    pass  # filled in next task
+    """Download raw image bytes from a URL."""
+
+    def fetch_bytes(self, url: str) -> bytes:
+        req = urllib.request.Request(url, headers={"User-Agent": "ClaudeFM/1.0"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        try:
+            return resp.read()
+        finally:
+            resp.close()
 
 
 class CoverArtService:
