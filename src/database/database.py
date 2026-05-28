@@ -112,7 +112,8 @@ def insert_track(conn: sqlite3.Connection, track: Track) -> int:
 
 
 def get_track(conn: sqlite3.Connection, track_id: int) -> Track | None:
-    row = conn.execute("SELECT * FROM tracks WHERE id=?", (track_id,)).fetchone()
+    row = conn.execute("SELECT * FROM tracks WHERE id=?",
+                       (track_id,)).fetchone()
     return _row_to_track(row) if row else None
 
 
@@ -147,7 +148,8 @@ def update_track_status(
 
 
 def update_lyrics_status(conn: sqlite3.Connection, track_id: int, status: str) -> None:
-    conn.execute("UPDATE tracks SET lyrics_status=? WHERE id=?", (status, track_id))
+    conn.execute("UPDATE tracks SET lyrics_status=? WHERE id=?",
+                 (status, track_id))
     conn.commit()
 
 
@@ -171,7 +173,8 @@ def get_all_tracks(
             (audio_format,),
         ).fetchall()
     else:
-        rows = conn.execute(f"SELECT * FROM tracks ORDER BY {order_by}").fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM tracks ORDER BY {order_by}").fetchall()
     return [_row_to_track(r) for r in rows]
 
 
@@ -228,7 +231,8 @@ def insert_playlist(conn: sqlite3.Connection, playlist: Playlist) -> int:
 
 
 def get_all_playlists(conn: sqlite3.Connection) -> list[Playlist]:
-    rows = conn.execute("SELECT * FROM playlists ORDER BY updated_at DESC").fetchall()
+    rows = conn.execute(
+        "SELECT * FROM playlists ORDER BY updated_at DESC").fetchall()
     return [Playlist(id=r["id"], name=r["name"], type=r["type"]) for r in rows]
 
 
@@ -262,7 +266,8 @@ def delete_playlist(conn: sqlite3.Connection, playlist_id: int) -> None:
 
 
 def update_playlist_name(conn: sqlite3.Connection, playlist_id: int, name: str) -> None:
-    conn.execute("UPDATE playlists SET name=?, updated_at=datetime('now') WHERE id=?", (name, playlist_id))
+    conn.execute(
+        "UPDATE playlists SET name=?, updated_at=datetime('now') WHERE id=?", (name, playlist_id))
     conn.commit()
 
 

@@ -32,7 +32,8 @@ class LRCLibService:
                     duration=track.duration,
                 )
             except Exception:
-                log.error(f"LRCLib.get failed for track {track_id}", exc_info=True)
+                log.error(
+                    f"LRCLib.get failed for track {track_id}", exc_info=True)
                 update_lyrics_status(self._conn, track_id, "not_fetched")
                 return "not_fetched"
 
@@ -41,7 +42,8 @@ class LRCLibService:
                 results = lrclib.search(track=track.title, artist=track.artist)
                 result = results[0] if results else None
             except Exception:
-                log.error(f"LRCLib.search failed for track {track_id}", exc_info=True)
+                log.error(
+                    f"LRCLib.search failed for track {track_id}", exc_info=True)
                 update_lyrics_status(self._conn, track_id, "not_fetched")
                 return "not_fetched"
 
@@ -62,9 +64,11 @@ class LRCLibService:
             return "not_found"
 
         try:
-            AudioFile(Path(track.file_path)).set_lyrics(state=state, lyrics=lyrics)
+            AudioFile(Path(track.file_path)).set_lyrics(
+                state=state, lyrics=lyrics)
         except UnsupportedSuffix:
-            log.error(f"Unsupported format for track {track_id}: {track.file_path}")
+            log.error(
+                f"Unsupported format for track {track_id}: {track.file_path}")
             update_lyrics_status(self._conn, track_id, "not_supported")
             return "not_supported"
 
@@ -72,7 +76,8 @@ class LRCLibService:
         return status
 
     def fetch_and_embed_async(self, track_id: int) -> None:
-        threading.Thread(target=self.fetch_and_embed, args=(track_id,), daemon=True).start()
+        threading.Thread(target=self.fetch_and_embed,
+                         args=(track_id,), daemon=True).start()
 
     def fetch_missing_lyrics(self) -> None:
         if not self._running.is_set():
@@ -94,9 +99,11 @@ class LRCLibService:
                 elif status in counters:
                     counters[status] += 1
             except Exception:
-                log.error(f"Unexpected error processing track {track.id}", exc_info=True)
+                log.error(
+                    f"Unexpected error processing track {track.id}", exc_info=True)
                 counters["errors"] += 1
-            event_bus.emit("lyrics_progress", {"track_id": track.id, "status": status})
+            event_bus.emit("lyrics_progress", {
+                           "track_id": track.id, "status": status})
         self._running.clear()
         event_bus.emit("lyrics_fetch_complete", counters)
 

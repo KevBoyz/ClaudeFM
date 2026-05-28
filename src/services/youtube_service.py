@@ -30,8 +30,8 @@ def _read_duration(file_path: str) -> int | None:
 
 _WINDOWS_INVALID = re.compile(r'[<>:"/\\|?*]')
 _RESERVED = {"CON", "PRN", "AUX", "NUL",
-             "COM1","COM2","COM3","COM4","COM5","COM6","COM7","COM8","COM9",
-             "LPT1","LPT2","LPT3","LPT4","LPT5","LPT6","LPT7","LPT8","LPT9"}
+             "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+             "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}
 _MAX_LEN = 200
 
 
@@ -55,7 +55,8 @@ class YouTubeService:
     def queue_download(self, track_id: int, on_complete: Callable[[int], None] | None = None) -> None:
         with self._active_lock:
             if track_id in self._active:
-                log.debug(f"queue_download: track {track_id} already active, skipping")
+                log.debug(
+                    f"queue_download: track {track_id} already active, skipping")
                 return
             self._active.add(track_id)
         self._executor.submit(self._run_download, track_id, on_complete)
@@ -78,14 +79,17 @@ class YouTubeService:
             if on_complete:
                 on_complete(track_id)
             return
-        update_track_status(self._conn, track_id, download_status="downloading")
-        event_bus.emit("download_progress", {"track_id": track_id, "percent": 0})
+        update_track_status(self._conn, track_id,
+                            download_status="downloading")
+        event_bus.emit("download_progress", {
+                       "track_id": track_id, "percent": 0})
         try:
             download_dir = get_setting(self._conn, "download_folder")
             audio_format = get_setting(self._conn, "audio_format")
             query = f"{track.artist} - {track.title}"
             base_name = sanitize_filename(f"{track.artist} - {track.title}")
-            out_path = self._run_ytdlp(query, download_dir, audio_format, track_id, base_name)
+            out_path = self._run_ytdlp(
+                query, download_dir, audio_format, track_id, base_name)
             duration = _read_duration(out_path)
             update_track_status(
                 self._conn, track_id,
@@ -99,13 +103,15 @@ class YouTubeService:
             if on_complete:
                 on_complete(track_id)
         except Exception as e:
-            log.error(f"Download failed for track {track_id}: {e}", exc_info=True)
+            log.error(
+                f"Download failed for track {track_id}: {e}", exc_info=True)
             update_track_status(
                 self._conn, track_id,
                 download_status="failed",
                 download_error=str(e),
             )
-            event_bus.emit("download_error", {"track_id": track_id, "message": str(e)})
+            event_bus.emit("download_error", {
+                           "track_id": track_id, "message": str(e)})
 
     def _run_ytdlp(self, query: str, download_dir: str, audio_format: str, track_id: int, base_name: str) -> str:
         filename_tmpl = base_name + ".%(ext)s"
@@ -113,10 +119,12 @@ class YouTubeService:
 
         def progress_hook(d):
             if d["status"] == "downloading":
-                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 1
+                total = d.get("total_bytes") or d.get(
+                    "total_bytes_estimate") or 1
                 downloaded = d.get("downloaded_bytes", 0)
                 percent = int(downloaded / total * 100)
-                event_bus.emit("download_progress", {"track_id": track_id, "percent": percent})
+                event_bus.emit("download_progress", {
+                               "track_id": track_id, "percent": percent})
 
         try:
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
@@ -155,5 +163,6 @@ class YouTubeService:
             filename = ydl.prepare_filename(info)
             final = Path(filename).with_suffix(f".{audio_format}")
             if not final.exists():
-                raise FileNotFoundError(f"Download completed but file not found: {final}")
+                raise FileNotFoundError(
+                    f"Download completed but file not found: {final}")
             return str(final)

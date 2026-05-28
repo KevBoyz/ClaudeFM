@@ -64,7 +64,8 @@ def full_scan(conn: sqlite3.Connection, folders: list[str]) -> int:
                 if existing[path_str].duration is None:
                     meta = _extract_metadata(path)
                     if meta["duration"] is not None:
-                        update_track_status(conn, existing[path_str].id, duration=meta["duration"])
+                        update_track_status(
+                            conn, existing[path_str].id, duration=meta["duration"])
                 continue
             meta = _extract_metadata(path)
             track = Track(

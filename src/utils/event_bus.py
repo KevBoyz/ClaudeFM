@@ -19,7 +19,8 @@ class EventBus:
         try:
             self._window.evaluate_js(js)
         except Exception as e:
-            log.error(f"EventBus.emit failed for '{event_type}': {e}", exc_info=True)
+            log.error(
+                f"EventBus.emit failed for '{event_type}': {e}", exc_info=True)
 
 
 event_bus = EventBus()

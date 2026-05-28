@@ -90,7 +90,8 @@ class LastFMService:
             net = self._get_network()
             artist = net.get_artist(artist_name)
             tracks = artist.get_top_tracks(limit=limit)
-            result = [{"type": "track", "title": t.item.get_name(), "artist": artist_name} for t in tracks]
+            result = [{"type": "track", "title": t.item.get_name(), "artist": artist_name}
+                      for t in tracks]
             self._set_cache(key, result)
             return result
         except Exception as e:
@@ -106,7 +107,8 @@ class LastFMService:
             net = self._get_network()
             album = net.get_album(artist_name, album_title)
             tracks = album.get_tracks()
-            result = [{"type": "track", "title": t.get_name(), "artist": artist_name, "album": album_title} for t in tracks]
+            result = [{"type": "track", "title": t.get_name(
+            ), "artist": artist_name, "album": album_title} for t in tracks]
             self._set_cache(key, result)
             return result
         except Exception as e:

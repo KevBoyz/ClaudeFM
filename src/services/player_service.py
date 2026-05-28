@@ -91,7 +91,8 @@ class PlayerService:
         self._paused = False
         self._current_file = file_path
         self._thread = threading.Thread(
-            target=self._playback_thread, args=(file_path, seek_position), daemon=True
+            target=self._playback_thread, args=(
+                file_path, seek_position), daemon=True
         )
         self._thread.start()
 
@@ -142,9 +143,11 @@ class PlayerService:
             cmd = [ffmpeg_exe, "-nostdin"]
             if seek_position > 0:
                 cmd += ["-ss", str(seek_position)]
-            cmd += ["-i", file_path, "-f", "s16le", "-ar", str(_SAMPLE_RATE), "-ac", str(_CHANNELS), "-"]
+            cmd += ["-i", file_path, "-f", "s16le", "-ar",
+                    str(_SAMPLE_RATE), "-ac", str(_CHANNELS), "-"]
 
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             with self._lock:
                 self._proc = proc
 

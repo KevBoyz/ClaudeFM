@@ -1,3 +1,9 @@
+from src.api.api import ClaudeFMAPI
+from src.utils.event_bus import event_bus
+from src.database.file_manager import quick_scan, start_background_scan
+from src.database.config_manager import get_setting, get_all_settings, set_setting
+from src.database.database import get_connection, init_db
+from src.utils.logger import get_logger
 import sys
 import json
 import ctypes
@@ -5,18 +11,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.utils.logger import get_logger
-from src.database.database import get_connection, init_db
-from src.database.config_manager import get_setting, get_all_settings, set_setting
-from src.database.file_manager import quick_scan, start_background_scan
-from src.utils.event_bus import event_bus
-from src.api.api import ClaudeFMAPI
 
 log = get_logger("app")
 
 
 def main():
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("com.claudefm.app")
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+        "com.claudefm.app")
     log.info("ClaudeFM starting")
 
     conn = get_connection()
@@ -78,7 +79,8 @@ def main():
     window.events.loaded += on_loaded
     window.events.closing += on_closing
 
-    icon_path = Path(__file__).parent / "src" / "interface" / "assets" / "icons" / "favicon.ico"
+    icon_path = Path(__file__).parent / "src" / "interface" / \
+        "assets" / "icons" / "favicon.ico"
     webview.start(debug=False, icon=str(icon_path))
 
 

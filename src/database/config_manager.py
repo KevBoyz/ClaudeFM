@@ -19,7 +19,8 @@ DEFAULTS: dict[str, str] = {
 
 
 def get_setting(conn: sqlite3.Connection, key: str) -> str:
-    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     if row and row[0] is not None:
         return row[0]
     return DEFAULTS.get(key, "")

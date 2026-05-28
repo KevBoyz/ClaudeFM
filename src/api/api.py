@@ -69,7 +69,8 @@ class ClaudeFMAPI:
             filters = json.loads(filters_json)
             order = filters.get("order_by", "date_downloaded DESC")
             fmt = filters.get("audio_format")
-            tracks = get_all_tracks(self._conn, order_by=order, audio_format=fmt)
+            tracks = get_all_tracks(
+                self._conn, order_by=order, audio_format=fmt)
             return json.dumps([t.model_dump(mode="json") for t in tracks])
         except Exception as e:
             log.error(f"get_library: {e}", exc_info=True)
@@ -171,7 +172,8 @@ class ClaudeFMAPI:
             if not track or not track.file_path:
                 return _err("Track not found or not downloaded")
             track_ids = context.get("track_ids", [track_id])
-            start_index = track_ids.index(track_id) if track_id in track_ids else 0
+            start_index = track_ids.index(
+                track_id) if track_id in track_ids else 0
             self._player.queue.set_context(track_ids, start_index)
             self._player.play(track.file_path)
             return _ok()
@@ -280,10 +282,12 @@ class ClaudeFMAPI:
         try:
             download_folder = get_setting(self._conn, "download_folder")
             try:
-                additional = json.loads(get_setting(self._conn, "additional_folders"))
+                additional = json.loads(get_setting(
+                    self._conn, "additional_folders"))
             except (json.JSONDecodeError, TypeError):
                 additional = []
-            folders = ([download_folder] if download_folder else []) + additional
+            folders = ([download_folder]
+                       if download_folder else []) + additional
             if folders:
                 start_background_scan(self._conn, folders)
             return _ok()
