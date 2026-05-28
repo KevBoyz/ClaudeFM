@@ -60,13 +60,13 @@ const Sidebar = (() => {
     }
     container.innerHTML = _results.map(r => {
       if (_type === 'artist') {
-        const name = (r.name || r.artist || '').replace(/'/g, "\\'");
+        const name = _jsStr(r.name || r.artist || '');
         return `<div class="sidebar-result-item" onclick="router.navigate('lastfm/artist',{name:'${name}'})">
           <div class="sidebar-result-info"><div class="sidebar-result-title">${r.name || r.artist}</div></div></div>`;
       }
       if (_type === 'album') {
-        const title  = (r.title || r.album || '').replace(/'/g, "\\'");
-        const artist = (r.artist || '').replace(/'/g, "\\'");
+        const title  = _jsStr(r.title || r.album || '');
+        const artist = _jsStr(r.artist || '');
         return `<div class="sidebar-result-item">
           <div class="sidebar-result-info" onclick="router.navigate('lastfm/album',{title:'${title}',artist:'${artist}'})" style="cursor:pointer">
             <div class="sidebar-result-title">${r.title || r.album}</div>

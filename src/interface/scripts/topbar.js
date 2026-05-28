@@ -117,8 +117,6 @@ const Topbar = (() => {
       ${!hasActivity    ? '<div style="padding:16px;color:var(--color-text_secondary);font-size:.875rem">No activity</div>' : ''}`;
   }
 
-  document.addEventListener('downloads:changed', () => _renderPanel());
-
   document.addEventListener('lyrics:fetch_start', e => {
     _lyricsFetching[e.detail.track_id] = e.detail;
     _updateBadge();

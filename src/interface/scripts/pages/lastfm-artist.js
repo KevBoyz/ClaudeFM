@@ -48,8 +48,8 @@ const lastfmArtistPage = (() => {
 
     const albumsHtml = albums.length
       ? `<div class="card-grid">${albums.map(a => {
-          const al = (a.title||a.album||'').replace(/'/g,"\\'");
-          const ar = (a.artist||name).replace(/'/g,"\\'");
+          const al = _jsStr(a.title||a.album||'');
+          const ar = _jsStr(a.artist||name);
           return `<div class="media-card">
             <div class="media-card-thumb" onclick="router.navigate('lastfm/album',{title:'${al}',artist:'${ar}'})">💿</div>
             <div class="media-card-name" onclick="router.navigate('lastfm/album',{title:'${al}',artist:'${ar}'})">${a.title||a.album}</div>

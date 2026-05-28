@@ -1,4 +1,6 @@
 const PlayerBar = (() => {
+  let _listenersAttached = false;
+
   function _fmt(sec) {
     if (!sec || isNaN(sec)) return '0:00';
     return `${Math.floor(sec/60)}:${String(Math.floor(sec%60)).padStart(2,'0')}`;
@@ -52,8 +54,11 @@ const PlayerBar = (() => {
       const s = player.state.track?.lyrics_status;
       if (s === 'synchronized' || s === 'plain_text') lyrics.open(player.state.track.id);
     };
-    document.addEventListener('player:changed', e => _update(e.detail));
-    document.addEventListener('player:tick',    e => _tick(e.detail.position));
+    if (!_listenersAttached) {
+      document.addEventListener('player:changed', e => _update(e.detail));
+      document.addEventListener('player:tick',    e => _tick(e.detail.position));
+      _listenersAttached = true;
+    }
   }
 
   function _update(s) {

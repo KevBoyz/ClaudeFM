@@ -1,5 +1,11 @@
 // Shared card builder functions — used by all page scripts.
 
+// Safely embed a value inside a single-quoted JS string within a double-quoted HTML attribute.
+// Escapes \, ', and " so neither the JS string nor the HTML attribute boundary can break.
+function _jsStr(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
 // Index of locally available tracks: "title|artist" → true
 const _localIdx = new Map();
 
@@ -93,7 +99,7 @@ document.addEventListener('downloads:changed', () => {
 });
 
 function artistCard(name, trackCount) {
-  const safe = (name||'').replace(/'/g,"\\'");
+  const safe = _jsStr(name);
   return `<div class="media-card" onclick="router.navigate('artists',{artist:'${safe}'})">
     <div class="media-card-thumb">👤</div>
     <div class="media-card-name">${name}</div>

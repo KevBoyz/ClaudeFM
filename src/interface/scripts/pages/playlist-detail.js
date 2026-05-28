@@ -74,22 +74,27 @@ const playlistDetailPage = (() => {
       const card = trackCard(t);
       return card.replace(
         '</div>',
-        `<button class="track-card-action" style="opacity:1" onclick="event.stopPropagation();_removeFromPlaylist(${playlistId},${t.id},this)" title="Remove">×</button></div>`
+        `<button class="track-card-action" style="opacity:1"
+          data-playlist-id="${playlistId}" data-track-id="${t.id}"
+          title="Remove">×</button></div>`
       );
     }).join('');
-  }
 
-  window._removeFromPlaylist = async (playlistId, trackId, btn) => {
-    btn.disabled = true;
-    try {
-      await api.remove_from_playlist(playlistId, trackId);
-      btn.closest('.track-card')?.remove();
-      toast.show('Removed from playlist', 'success', 2000);
-    } catch (e) {
-      btn.disabled = false;
-      toast.show('Failed to remove', 'error', 3000);
-    }
-  };
+    list.addEventListener('click', async e => {
+      const btn = e.target.closest('[data-playlist-id]');
+      if (!btn) return;
+      e.stopPropagation();
+      btn.disabled = true;
+      try {
+        await api.remove_from_playlist(parseInt(btn.dataset.playlistId), parseInt(btn.dataset.trackId));
+        btn.closest('.track-card')?.remove();
+        toast.show('Removed from playlist', 'success', 2000);
+      } catch (_) {
+        btn.disabled = false;
+        toast.show('Failed to remove', 'error', 3000);
+      }
+    });
+  }
 
   function destroy() {}
 

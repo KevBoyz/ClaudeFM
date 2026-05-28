@@ -49,8 +49,8 @@ const albumsPage = (() => {
       return;
     }
     grid.innerHTML = sorted.map(a => {
-      const al = (a.album||'').replace(/'/g,"\\'");
-      const ar = (a.artist||'').replace(/'/g,"\\'");
+      const al = _jsStr(a.album);
+      const ar = _jsStr(a.artist);
       return albumCard(a.album, a.artist, a.track_count,
         `router.navigate('albums',{album:'${al}',artist:'${ar}'})`);
     }).join('');

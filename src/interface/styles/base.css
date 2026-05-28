@@ -87,14 +87,6 @@ input:focus, select:focus {
 
 a { color: var(--color-accent); text-decoration: none; cursor: pointer; }
 
-/* ── Overlay layer ────────────────────────────────── */
-#overlay-layer {
-  position: fixed; inset: 0;
-  pointer-events: none;
-  z-index: 200;
-}
-#overlay-layer > * { pointer-events: auto; }
-
 /* ── Toast container ──────────────────────────────── */
 #toast-container {
   position: fixed;
