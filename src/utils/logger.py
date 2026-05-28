@@ -5,6 +5,8 @@ from datetime import datetime
 from pathlib import Path
 
 _LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+_ROOT_LOGGER_NAME = "claudefm"
+_MAX_SESSIONS = 10
 _SESSION_FILE: Path | None = None
 _root_logger: logging.Logger | None = None
 _logger_lock = threading.Lock()
@@ -21,12 +23,12 @@ def _setup_root_logger() -> logging.Logger:
             return _root_logger
 
         _LOG_DIR.mkdir(exist_ok=True)
-        _cleanup_old_sessions(keep=10)
+        _cleanup_old_sessions(keep=_MAX_SESSIONS)
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         _SESSION_FILE = _LOG_DIR / f"{timestamp}.log"
 
-        logger = logging.getLogger("claudefm")
+        logger = logging.getLogger(_ROOT_LOGGER_NAME)
         logger.setLevel(logging.DEBUG)
 
         fmt = logging.Formatter(
@@ -53,9 +55,12 @@ def _setup_root_logger() -> logging.Logger:
 def _cleanup_old_sessions(keep: int) -> None:
     files = sorted(_LOG_DIR.glob("*.log"), key=lambda f: f.stat().st_mtime)
     for old in files[:-keep]:
-        old.unlink(missing_ok=True)
+        try:
+            old.unlink(missing_ok=True)
+        except PermissionError:
+            pass
 
 
 def get_logger(name: str) -> logging.Logger:
     _setup_root_logger()
-    return logging.getLogger(f"claudefm.{name}")
+    return logging.getLogger(f"{_ROOT_LOGGER_NAME}.{name}")
