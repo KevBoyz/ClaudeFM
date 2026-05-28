@@ -83,7 +83,7 @@ class YtDlpDownloader:
             "quiet": True,
         }
         if js_runtime:
-            ydl_opts["js_runtimes"] = js_runtime
+            ydl_opts["js_runtimes"] = {js_runtime: {}}
         if ffmpeg_exe:
             ydl_opts["ffmpeg_location"] = ffmpeg_exe
 
