@@ -17,6 +17,78 @@ _BYTES_PER_FRAME = 4  # s16le stereo: 2 ch × 2 bytes
 _SILENCE = bytes(_CHUNK_FRAMES * _BYTES_PER_FRAME)
 
 
+def apply_volume(data: bytes, vol: float) -> bytes:
+    arr = array.array("h", data)
+    for i in range(len(arr)):
+        arr[i] = max(-32768, min(32767, int(arr[i] * vol)))
+    return arr.tobytes()
+
+
+class FFmpegDecoder:
+    def __init__(self, file_path: str, seek_position: float = 0.0):
+        self._file_path = file_path
+        self._seek_position = seek_position
+        self._proc: subprocess.Popen | None = None
+
+    def __enter__(self) -> "FFmpegDecoder":
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        cmd = [ffmpeg_exe, "-nostdin"]
+        if self._seek_position > 0:
+            cmd += ["-ss", str(self._seek_position)]
+        cmd += ["-i", self._file_path, "-f", "s16le", "-ar",
+                str(_SAMPLE_RATE), "-ac", str(_CHANNELS), "-"]
+        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._proc is not None:
+            try:
+                self._proc.stdout.close()
+            except Exception:
+                pass
+            try:
+                self._proc.terminate()
+                self._proc.wait(timeout=2)
+            except Exception:
+                pass
+            self._proc = None
+
+    def read_chunk(self) -> bytes | None:
+        data = self._proc.stdout.read(_CHUNK_FRAMES * _BYTES_PER_FRAME)
+        return data if data else None
+
+
+class AudioOutput:
+    def __enter__(self) -> "AudioOutput":
+        # Re-initialize PortAudio to pick up OS default device changes
+        # (headphones/speakers connected after app start).
+        try:
+            sd._terminate()
+            sd._initialize()
+        except Exception:
+            pass
+        self._stream = sd.RawOutputStream(
+            samplerate=_SAMPLE_RATE, channels=_CHANNELS, dtype="int16", blocksize=_CHUNK_FRAMES
+        )
+        self._stream.__enter__()
+        return self
+
+    def __exit__(self, *args) -> None:
+        self._stream.__exit__(*args)
+
+    def write(self, data: bytes) -> None:
+        needed = _CHUNK_FRAMES * _BYTES_PER_FRAME
+        if len(data) < needed:
+            data += bytes(needed - len(data))
+        self._stream.write(data)
+
+    def write_silence(self) -> None:
+        self._stream.write(_SILENCE)
+
+
 class Queue:
     def __init__(self):
         self._track_ids: list[int] = []
@@ -65,7 +137,7 @@ class PlayerService:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        self._proc: subprocess.Popen | None = None
+        self._decoder: FFmpegDecoder | None = None
         self._position: float = 0.0
         self._paused: bool = False
         self._volume: float = 1.0
@@ -73,17 +145,9 @@ class PlayerService:
 
     def play(self, file_path: str, seek_position: float = 0.0) -> None:
         self._stop_event.set()
-        # Close current proc to unblock any pending stdout.read()
         with self._lock:
-            if self._proc is not None:
-                try:
-                    self._proc.stdout.close()
-                except Exception:
-                    pass
-                try:
-                    self._proc.terminate()
-                except Exception:
-                    pass
+            if self._decoder is not None:
+                self._decoder.close()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2)
         self._stop_event.clear()
@@ -91,8 +155,7 @@ class PlayerService:
         self._paused = False
         self._current_file = file_path
         self._thread = threading.Thread(
-            target=self._playback_thread, args=(
-                file_path, seek_position), daemon=True
+            target=self._playback_thread, args=(file_path, seek_position), daemon=True
         )
         self._thread.start()
 
@@ -129,58 +192,24 @@ class PlayerService:
             return self._paused
 
     def _playback_thread(self, file_path: str, seek_position: float = 0.0) -> None:
-        proc = None
         try:
-            # Re-initialize PortAudio so the stream uses the current system default
-            # output device (handles headphones/speakers connected after app start).
-            try:
-                sd._terminate()
-                sd._initialize()
-            except Exception:
-                pass
-
-            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-            cmd = [ffmpeg_exe, "-nostdin"]
-            if seek_position > 0:
-                cmd += ["-ss", str(seek_position)]
-            cmd += ["-i", file_path, "-f", "s16le", "-ar",
-                    str(_SAMPLE_RATE), "-ac", str(_CHANNELS), "-"]
-
-            proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-            with self._lock:
-                self._proc = proc
-
-            with sd.RawOutputStream(
-                samplerate=_SAMPLE_RATE, channels=_CHANNELS, dtype="int16", blocksize=_CHUNK_FRAMES
-            ) as stream:
-                while not self._stop_event.is_set():
-                    with self._lock:
-                        paused = self._paused
-                        vol = self._volume
-
-                    if paused:
-                        stream.write(_SILENCE)
-                        continue
-
-                    data = proc.stdout.read(_CHUNK_FRAMES * _BYTES_PER_FRAME)
-                    if not data:
-                        break  # stream exhausted — natural end
-
-                    if vol != 1.0:
-                        arr = array.array("h", data)
-                        for i in range(len(arr)):
-                            arr[i] = max(-32768, min(32767, int(arr[i] * vol)))
-                        data = arr.tobytes()
-
-                    needed = _CHUNK_FRAMES * _BYTES_PER_FRAME
-                    if len(data) < needed:
-                        data += bytes(needed - len(data))
-
-                    stream.write(data)
-
-                    with self._lock:
-                        self._position += _CHUNK_FRAMES / _SAMPLE_RATE
+            with FFmpegDecoder(file_path, seek_position) as decoder:
+                with self._lock:
+                    self._decoder = decoder
+                with AudioOutput() as output:
+                    while not self._stop_event.is_set():
+                        with self._lock:
+                            paused = self._paused
+                            vol = self._volume
+                        if paused:
+                            output.write_silence()
+                            continue
+                        chunk = decoder.read_chunk()
+                        if not chunk:
+                            break
+                        output.write(apply_volume(chunk, vol) if vol != 1.0 else chunk)
+                        with self._lock:
+                            self._position += _CHUNK_FRAMES / _SAMPLE_RATE
 
             if not self._stop_event.is_set():
                 event_bus.emit("playback_ended", {})
@@ -190,15 +219,4 @@ class PlayerService:
             event_bus.emit("playback_failed", {"message": str(e)})
         finally:
             with self._lock:
-                if self._proc is proc:
-                    self._proc = None
-            if proc is not None:
-                try:
-                    proc.stdout.close()
-                except Exception:
-                    pass
-                try:
-                    proc.terminate()
-                    proc.wait(timeout=2)
-                except Exception:
-                    pass
+                self._decoder = None
