@@ -1,8 +1,64 @@
 # ClaudeFM
 
-Desktop music player for Windows. Search metadata via Last.fm, download audio from YouTube, play locally.
+![ClaudeFM banner](docs/assets/banner.png)
 
-## Stack
+> A desktop music player for Windows — search millions of tracks via Last.fm, download audio from YouTube, and play everything locally with full library management.
+
+---
+
+## Features
+
+- **Search** artists, albums, and tracks using the Last.fm catalog
+- **Download** audio directly from YouTube in M4A or MP3
+- **Play locally** with seek, volume control, and queue management
+- **Lyrics** fetched and synced automatically from LRCLIB after each download
+- **Library** organized by artist, album, and playlist — including auto-generated playlists
+- **Keyboard shortcuts** for playback control
+- **Dark/light theme** support
+- **Offline-first** — all data stored locally in SQLite, Last.fm results cached for 30 days
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- A [Last.fm API key](https://www.last.fm/api/account/create) (free)
+- A folder to store your downloaded music
+
+### Installation
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+### Run
+
+```powershell
+python app.py
+```
+
+On first launch, open **Settings** to enter your Last.fm API key and choose your music download folder. That's it.
+
+---
+
+## How It Works
+
+1. Search an artist, track, or album in the sidebar — results come from Last.fm
+2. Click download on any track — audio is fetched from YouTube and saved locally
+3. Lyrics are attached to the file automatically via LRCLIB
+4. Play from your library with full queue and playback control
+5. Everything is stored locally — no account needed beyond the Last.fm API key
+
+---
+
+## Technical Reference
+
+<details>
+<summary>Stack</summary>
 
 | Layer | Tech |
 |---|---|
@@ -15,39 +71,10 @@ Desktop music player for Windows. Search metadata via Last.fm, download audio fr
 | Data models | pydantic v2 |
 | Backend | Python 3.11+ |
 
-## How it works
+</details>
 
-1. Search artist/track/album on Last.fm via the sidebar
-2. Download audio from YouTube as m4a or mp3
-3. Lyrics fetched automatically from LRCLIB after download (if enabled)
-4. Play from local library with seek, volume, and queue control
-5. All state persisted in SQLite (`claudefm.db`)
-
-## Setup
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-## Run
-
-```powershell
-python app.py
-```
-
-Requires a Last.fm API key and a download folder — configure on first launch in Settings.
-
-## Test
-
-```powershell
-.venv\Scripts\python.exe -m pytest tests/ -v
-```
-
-93 tests across 13 modules covering models, database, services, API bridge, and utilities.
-
-## Project structure
+<details>
+<summary>Project structure</summary>
 
 ```
 app.py                          # Entry point
@@ -68,11 +95,14 @@ src/
     logger.py                   # Session-based rotating logger
     event_bus.py                # Centralised push events (evaluate_js)
   interface/                    # HTML/CSS/JS SPA (home, library, artists, albums, playlists, settings)
-tests/                          # pytest suite
-docs/superpowers/               # Specs and implementation plans
+tests/                          # pytest suite (93 tests, 13 modules)
+docs/                           # Specs and implementation plans
 ```
 
-## Configuration defaults
+</details>
+
+<details>
+<summary>Configuration defaults</summary>
 
 | Key | Default |
 |---|---|
@@ -83,3 +113,16 @@ docs/superpowers/               # Specs and implementation plans
 | `cache_enabled` | `true` |
 | `auto_fetch_lyrics` | `true` |
 | `player_volume` | `1.0` |
+
+</details>
+
+<details>
+<summary>Running tests</summary>
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/ -v
+```
+
+93 tests across 13 modules covering models, database, services, API bridge, and utilities.
+
+</details>
