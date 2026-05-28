@@ -260,15 +260,12 @@ def test_get_cover_image_url_with_album(db_conn):
     mock_album.get_cover_image.assert_called_once_with(pylast.SIZE_EXTRA_LARGE)
 
 
-def test_get_cover_image_url_falls_back_to_artist(db_conn):
+def test_get_cover_image_url_returns_none_without_album(db_conn):
     init_db(db_conn)
     svc = _make_service(db_conn)
-    mock_artist = MagicMock()
-    mock_artist.get_cover_image.return_value = 'https://cdn.com/artist.jpg'
-    with patch.object(svc, '_get_network') as mock_net:
-        mock_net.return_value.get_artist.return_value = mock_artist
-        url = svc.get_cover_image_url('Radiohead')
-    assert url == 'https://cdn.com/artist.jpg'
+    # pylast.Artist has no get_cover_image; album is required for artwork lookup
+    url = svc.get_cover_image_url('Radiohead')
+    assert url is None
 
 
 def test_get_cover_image_url_returns_none_without_api_key(db_conn):
