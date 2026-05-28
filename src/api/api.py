@@ -34,6 +34,14 @@ def _err(message: str) -> str:
 
 
 class ClaudeFMAPI:
+    """pywebview js_api bridge — every public method is callable from JS via ``window.pywebview.api``.
+
+    All methods return JSON strings. Most use the ``{"success": bool, ...}``
+    envelope (via ``_ok``/``_err``); a few return raw arrays/dicts (see CLAUDE.md
+    for the exceptions). Services are instantiated lazily so the API object can
+    be created before settings (e.g. the Last.fm API key) are configured.
+    """
+
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
         self._player = PlayerService()
@@ -58,6 +66,12 @@ class ClaudeFMAPI:
         return self._lrclib
 
     def _lyrics_hook(self):
+        """Return ``LRCLibService.fetch_and_embed_async`` if auto_fetch_lyrics is enabled, else None.
+
+        Used as the ``on_complete`` callback for ``YouTubeService.queue_download``
+        so lyrics are fetched automatically after each download without coupling
+        the two services directly.
+        """
         if get_setting(self._conn, "auto_fetch_lyrics") == "true":
             return self._get_lrclib().fetch_and_embed_async
         return None
@@ -65,6 +79,11 @@ class ClaudeFMAPI:
     # ── Library ──────────────────────────────────────────────────────────────
 
     def get_library(self, filters_json: str = "{}") -> str:
+        """Return all tracks as a JSON array, optionally filtered/sorted via ``filters_json``.
+
+        ``filters_json`` may contain ``order_by`` and ``audio_format`` keys.
+        Returns a raw array (no ``success`` wrapper) on success, ``_err`` on failure.
+        """
         try:
             filters = json.loads(filters_json)
             order = filters.get("order_by", "date_downloaded DESC")
@@ -155,6 +174,11 @@ class ClaudeFMAPI:
             return _err(str(e))
 
     def download_lastfm_track(self, title: str, artist: str, album: str | None = None) -> str:
+        """Insert a track stub from Last.fm metadata and immediately queue a download.
+
+        The returned payload includes ``track_id`` so the frontend can track
+        download progress events without a separate lookup.
+        """
         try:
             t = Track(title=title, artist=artist, album=album)
             track_id = insert_track(self._conn, t)
@@ -166,6 +190,12 @@ class ClaudeFMAPI:
     # ── Playback ──────────────────────────────────────────────────────────────
 
     def play(self, track_id: int, context_json: str = "{}") -> str:
+        """Start playing ``track_id``, optionally within a broader playback context.
+
+        ``context_json`` may contain ``track_ids`` — a list of IDs representing
+        the surrounding queue (e.g. the full album or library view). The player
+        cursor is set to ``track_id``'s position in that list.
+        """
         try:
             context = json.loads(context_json)
             track = get_track(self._conn, track_id)
@@ -189,6 +219,7 @@ class ClaudeFMAPI:
         return _ok()
 
     def next_track(self) -> str:
+        """Advance the queue and play the next track; emits ``queue_ended`` if the queue is exhausted."""
         try:
             next_id = self._player.queue.next_id()
             if next_id is None:
@@ -250,6 +281,7 @@ class ClaudeFMAPI:
             return _err(str(e))
 
     def create_playlist(self, name: str, playlist_type: str = "manual") -> str:
+        """Create a playlist, enforcing the 15-auto-playlist cap by deleting the oldest if needed."""
         try:
             if playlist_type == "auto" and get_auto_playlist_count(self._conn) >= AUTO_PLAYLIST_LIMIT:
                 delete_oldest_auto_playlist(self._conn)
@@ -279,6 +311,7 @@ class ClaudeFMAPI:
             return _err(str(e))
 
     def rescan_library(self) -> str:
+        """Trigger a background full_scan across the download folder and any additional folders."""
         try:
             download_folder = get_setting(self._conn, "download_folder")
             try:
@@ -364,6 +397,7 @@ class ClaudeFMAPI:
             return _err(str(e))
 
     def check_internet(self) -> str:
+        """Probe 8.8.8.8:53 with a 3 s timeout; returns ``{"online": bool}`` (no success wrapper)."""
         try:
             socket.create_connection(("8.8.8.8", 53), timeout=3)
             return json.dumps({"online": True})

@@ -37,6 +37,7 @@ _MAX_LEN = 200
 
 
 def sanitize_filename(name: str) -> str:
+    """Strip characters illegal on Windows, reserved device names, and trailing dots/spaces."""
     name = _WINDOWS_INVALID.sub("_", name)
     name = name.rstrip(". ")
     if name.upper() in _RESERVED:
@@ -45,6 +46,12 @@ def sanitize_filename(name: str) -> str:
 
 
 class YtDlpDownloader:
+    """Thin wrapper around yt-dlp that searches YouTube, downloads best audio, and converts via ffmpeg.
+
+    Separated from YouTubeService so it can be swapped or mocked in tests
+    without touching thread/executor logic.
+    """
+
     def download(
         self,
         query: str,
@@ -53,6 +60,13 @@ class YtDlpDownloader:
         base_name: str,
         on_progress: Callable[[int], None],
     ) -> str:
+        """Search YouTube for ``query``, download, convert to ``audio_format``, and return the file path.
+
+        Uses ``ytsearch:`` as the default search prefix. When results come back
+        as a playlist-like dict (ytsearch), the first entry is unwrapped. A JS
+        runtime (node/deno/phantomjs) is passed to yt-dlp if found on PATH to
+        enable full format support.
+        """
         filename_tmpl = base_name + ".%(ext)s"
         out_template = str(Path(download_dir) / filename_tmpl)
 
@@ -102,6 +116,13 @@ class YtDlpDownloader:
 
 
 class YouTubeService:
+    """Manages concurrent audio downloads via a ThreadPoolExecutor backed by YtDlpDownloader.
+
+    The ``_active`` set (guarded by ``_active_lock``) prevents duplicate
+    concurrent downloads for the same track_id — important when an album batch
+    fires multiple workers for overlapping tracks.
+    """
+
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
         self._executor = ThreadPoolExecutor(
@@ -112,6 +133,11 @@ class YouTubeService:
         self._downloader = YtDlpDownloader()
 
     def queue_download(self, track_id: int, on_complete: Callable[[int], None] | None = None) -> None:
+        """Submit a download job to the executor, skipping if the track is already in-flight.
+
+        ``on_complete`` is called with ``track_id`` on success — used to inject
+        lyrics fetching without coupling this service to LRCLibService.
+        """
         with self._active_lock:
             if track_id in self._active:
                 log.debug(f"queue_download: track {track_id} already active, skipping")
@@ -120,6 +146,7 @@ class YouTubeService:
         self._executor.submit(self._run_download, track_id, on_complete)
 
     def _run_download(self, track_id: int, on_complete: Callable[[int], None] | None) -> None:
+        """Executor target: run ``download`` and remove ``track_id`` from ``_active`` in a finally block."""
         try:
             self.download(track_id, on_complete)
         finally:
@@ -130,6 +157,12 @@ class YouTubeService:
         self._executor.shutdown(wait=wait)
 
     def download(self, track_id: int, on_complete: Callable[[int], None] | None = None) -> None:
+        """Execute the full download pipeline for one track: status updates, yt-dlp, duration read, events.
+
+        Short-circuits if the track is already downloaded and its file is
+        available. Emits ``download_progress``, ``download_complete``, or
+        ``download_error`` events on the bus.
+        """
         track = get_track(self._conn, track_id)
         if not track:
             return
@@ -167,6 +200,7 @@ class YouTubeService:
             event_bus.emit("download_error", {"track_id": track_id, "message": str(e)})
 
     def _run_ytdlp(self, query: str, download_dir: str, audio_format: str, track_id: int, base_name: str) -> str:
+        """Delegate to YtDlpDownloader, wiring ``download_progress`` events via the on_progress callback."""
         return self._downloader.download(
             query, download_dir, audio_format, base_name,
             on_progress=lambda pct: event_bus.emit("download_progress", {"track_id": track_id, "percent": pct}),

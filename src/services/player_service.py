@@ -18,6 +18,11 @@ _SILENCE = bytes(_CHUNK_FRAMES * _BYTES_PER_FRAME)
 
 
 def apply_volume(data: bytes, vol: float) -> bytes:
+    """Scale a raw s16le PCM buffer by ``vol`` via 16-bit integer arithmetic.
+
+    sounddevice has no volume API, so volume is applied by multiplying each
+    sample in the ``array.array('h')`` view and clamping to [-32768, 32767].
+    """
     arr = array.array("h", data)
     for i in range(len(arr)):
         arr[i] = max(-32768, min(32767, int(arr[i] * vol)))
@@ -25,6 +30,14 @@ def apply_volume(data: bytes, vol: float) -> bytes:
 
 
 class FFmpegDecoder:
+    """Context manager that spawns an ffmpeg subprocess decoding audio to raw s16le PCM.
+
+    Seek is implemented by passing ``-ss`` before ``-i``, which restarts the
+    stream from the requested offset (sounddevice has no mid-stream seek API).
+    The subprocess is terminated in ``close()`` to unblock any pending
+    ``stdout.read()`` in the playback thread.
+    """
+
     def __init__(self, file_path: str, seek_position: float = 0.0):
         self._file_path = file_path
         self._seek_position = seek_position
@@ -57,11 +70,19 @@ class FFmpegDecoder:
             self._proc = None
 
     def read_chunk(self) -> bytes | None:
+        """Read one chunk of PCM frames from ffmpeg stdout; returns None at EOF."""
         data = self._proc.stdout.read(_CHUNK_FRAMES * _BYTES_PER_FRAME)
         return data if data else None
 
 
 class AudioOutput:
+    """Context manager wrapping a sounddevice RawOutputStream at 44.1 kHz stereo int16.
+
+    PortAudio is re-initialized on each ``__enter__`` (``sd._terminate()`` +
+    ``sd._initialize()``) so the stream picks up OS default device changes —
+    e.g. headphones connected after the app started.
+    """
+
     def __enter__(self) -> "AudioOutput":
         # Re-initialize PortAudio to pick up OS default device changes
         # (headphones/speakers connected after app start).
@@ -80,6 +101,7 @@ class AudioOutput:
         self._stream.__exit__(*args)
 
     def write(self, data: bytes) -> None:
+        """Write PCM data to the stream, zero-padding to a full chunk if short."""
         needed = _CHUNK_FRAMES * _BYTES_PER_FRAME
         if len(data) < needed:
             data += bytes(needed - len(data))
@@ -90,12 +112,19 @@ class AudioOutput:
 
 
 class Queue:
+    """Ordered list of track IDs with a cursor for sequential playback.
+
+    Not a thread-safe data structure — callers must hold the player lock if
+    accessed from multiple threads.
+    """
+
     def __init__(self):
         self._track_ids: list[int] = []
         self._index: int = -1
         self.ended: bool = False
 
     def set_context(self, track_ids: list[int], start_index: int = 0) -> None:
+        """Replace the queue contents and move the cursor to ``start_index``."""
         self._track_ids = track_ids
         self._index = start_index
         self.ended = False
@@ -106,6 +135,7 @@ class Queue:
         return None
 
     def next_id(self) -> int | None:
+        """Advance cursor and return the next track id, or None if the queue is exhausted (sets ``ended``)."""
         next_idx = self._index + 1
         if next_idx < len(self._track_ids):
             self._index = next_idx
@@ -125,6 +155,7 @@ class Queue:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Queue":
+        """Restore a Queue from the dict produced by ``to_dict`` (used for session persistence)."""
         q = cls()
         q._track_ids = data.get("track_ids", [])
         q._index = data.get("index", -1)
@@ -132,6 +163,15 @@ class Queue:
 
 
 class PlayerService:
+    """Threaded audio player backed by ffmpeg (decode) and sounddevice (output).
+
+    A single daemon thread owns the FFmpegDecoder and AudioOutput context
+    managers. Pause writes silence to keep the stream alive without advancing
+    position. ``_lock`` guards ``_position``, ``_paused``, ``_volume``, and
+    ``_decoder`` which are read/written from both the playback thread and API
+    calls.
+    """
+
     def __init__(self):
         self.queue = Queue()
         self._lock = threading.Lock()
@@ -144,6 +184,11 @@ class PlayerService:
         self._current_file: str | None = None
 
     def play(self, file_path: str, seek_position: float = 0.0) -> None:
+        """Start playback from ``file_path``, optionally seeking to ``seek_position`` seconds.
+
+        Signals ``_stop_event``, forcibly closes any in-progress decoder, waits
+        for the old thread to exit (up to 2 s), then spawns a new playback thread.
+        """
         self._stop_event.set()
         with self._lock:
             if self._decoder is not None:
@@ -171,6 +216,7 @@ class PlayerService:
         self._stop_event.set()
 
     def seek(self, position: float) -> None:
+        """Seek to ``position`` seconds by restarting playback with ``-ss`` passed to ffmpeg."""
         if self._current_file:
             self.play(self._current_file, seek_position=position)
 
@@ -192,6 +238,12 @@ class PlayerService:
             return self._paused
 
     def _playback_thread(self, file_path: str, seek_position: float = 0.0) -> None:
+        """Main playback loop: read PCM chunks from ffmpeg, apply volume, write to sounddevice.
+
+        When paused, writes a silence chunk each iteration to keep the stream
+        alive without consuming real data (so ``_position`` doesn't advance).
+        Emits ``playback_ended`` on natural EOF or ``playback_failed`` on error.
+        """
         try:
             with FFmpegDecoder(file_path, seek_position) as decoder:
                 with self._lock:

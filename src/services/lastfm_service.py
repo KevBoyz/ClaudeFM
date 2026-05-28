@@ -10,17 +10,29 @@ log = get_logger("lastfm")
 
 
 class LastFMService:
+    """Facade over pylast that adds a 30-day SQLite cache for all remote calls.
+
+    The ``pylast.LastFMNetwork`` object is created lazily on the first request
+    so the service can be instantiated before the API key is configured.
+    """
+
     def __init__(self, conn: sqlite3.Connection, api_key: str):
         self._cache = LastFMCache(conn)
         self._api_key = api_key
         self._network = None
 
     def _get_network(self):
+        """Return the shared pylast network, creating it on first use."""
         if self._network is None:
             self._network = pylast.LastFMNetwork(api_key=self._api_key)
         return self._network
 
     def _cached_fetch(self, key: str, fetch_fn, error_tag: str) -> list[dict]:
+        """Return cached results if available, otherwise call ``fetch_fn``, cache, and return.
+
+        Any exception from ``fetch_fn`` is logged and an empty list returned so
+        callers never have to handle network failures explicitly.
+        """
         cached = self._cache.get(key)
         if cached is not None:
             return cached
@@ -33,6 +45,7 @@ class LastFMService:
             return []
 
     def search(self, query: str, search_type: SearchType | str, limit: int = 5) -> list[dict]:
+        """Search Last.fm for artists, tracks, or albums by ``search_type``, with caching."""
         if not self._api_key:
             return []
         key = self._cache.key("search", search_type, query)

@@ -13,6 +13,11 @@ _logger_lock = threading.Lock()
 
 
 def _setup_root_logger() -> logging.Logger:
+    """Initialize the ``claudefm`` root logger exactly once (thread-safe double-checked locking).
+
+    Creates a timestamped session log file under ``logs/`` and a console
+    handler at INFO level. All child loggers inherit handlers via the root.
+    """
     global _root_logger, _SESSION_FILE
 
     if _root_logger is not None:
@@ -53,6 +58,7 @@ def _setup_root_logger() -> logging.Logger:
 
 
 def _cleanup_old_sessions(keep: int) -> None:
+    """Delete the oldest log files, retaining the ``keep`` most recent sessions."""
     files = sorted(_LOG_DIR.glob("*.log"), key=lambda f: f.stat().st_mtime)
     for old in files[:-keep]:
         try:
@@ -62,5 +68,6 @@ def _cleanup_old_sessions(keep: int) -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
+    """Return a child logger named ``claudefm.<name>``, initializing the root logger if needed."""
     _setup_root_logger()
     return logging.getLogger(f"{_ROOT_LOGGER_NAME}.{name}")

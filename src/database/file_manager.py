@@ -19,6 +19,7 @@ _UNKNOWN_ARTIST = "Unknown Artist"
 
 
 def _get_tag(tags: dict, *keys: str, default: str) -> str:
+    """Return the first non-empty tag value found under any of the given keys, or ``default``."""
     for key in keys:
         if key in tags:
             return str(tags[key][0])
@@ -26,6 +27,11 @@ def _get_tag(tags: dict, *keys: str, default: str) -> str:
 
 
 def _extract_metadata(path: Path) -> dict:
+    """Read title, artist, duration, and format from an audio file's tags via mutagen.
+
+    Falls back to the filename stem / "Unknown Artist" if tags are missing or
+    mutagen raises. Returns a plain dict so callers don't import mutagen.
+    """
     title = path.stem
     artist = _UNKNOWN_ARTIST
     duration = None
@@ -42,6 +48,10 @@ def _extract_metadata(path: Path) -> dict:
 
 
 def quick_scan(conn: sqlite3.Connection) -> None:
+    """Mark tracks as MISSING if their recorded file_path no longer exists on disk.
+
+    Runs synchronously at startup — O(n) stat checks only, no directory walk.
+    """
     tracks = get_all_tracks(conn)
     for track in tracks:
         if track.file_path and not Path(track.file_path).exists():
@@ -50,6 +60,12 @@ def quick_scan(conn: sqlite3.Connection) -> None:
 
 
 def full_scan(conn: sqlite3.Connection, folders: list[str]) -> int:
+    """Walk ``folders`` recursively and import any .mp3/.m4a files not yet in the DB.
+
+    Also back-fills missing duration values for already-known tracks. Emits
+    ``library_scan_complete`` on the event bus when done. Returns the number
+    of newly added tracks.
+    """
     existing = {t.file_path: t for t in get_all_tracks(conn) if t.file_path}
     added = 0
 
@@ -88,6 +104,7 @@ def full_scan(conn: sqlite3.Connection, folders: list[str]) -> int:
 
 
 def start_background_scan(conn: sqlite3.Connection, folders: list[str]) -> threading.Thread:
+    """Launch ``full_scan`` in a daemon thread and return it immediately."""
     t = threading.Thread(target=full_scan, args=(conn, folders), daemon=True)
     t.start()
     return t

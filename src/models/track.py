@@ -5,6 +5,13 @@ from src.models.enums import DownloadStatus, FileStatus, LyricsStatus
 
 
 class Track(BaseModel):
+    """Pydantic model mirroring the ``tracks`` DB table.
+
+    ``date_downloaded`` is parsed from an ISO string by ``_row_to_track``.
+    ``download_status`` and ``file_status`` default to safe values so a newly
+    created Track (before any DB round-trip) is usable without extra setup.
+    """
+
     id: int | None = None
     title: str = Field(min_length=1)
     artist: str = Field(min_length=1)

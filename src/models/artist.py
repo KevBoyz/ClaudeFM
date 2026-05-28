@@ -4,6 +4,8 @@ from src.models.track import Track
 
 
 class Artist(BaseModel):
+    """Last.fm artist result. Not persisted to the DB — used only for API responses."""
+
     name: str = Field(min_length=1)
     mbid: str | None = None
     listeners: int | None = None

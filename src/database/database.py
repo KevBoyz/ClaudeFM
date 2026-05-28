@@ -16,6 +16,11 @@ _DB_PATH = Path(__file__).parent.parent.parent / "claudefm.db"
 
 
 def get_connection(path: Path = _DB_PATH) -> sqlite3.Connection:
+    """Open (or create) the SQLite database with WAL journal mode and FK enforcement.
+
+    ``check_same_thread=False`` is required because YouTubeService and
+    file_manager access the connection from background threads.
+    """
     conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -24,6 +29,7 @@ def get_connection(path: Path = _DB_PATH) -> sqlite3.Connection:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
+    """Create all five tables if they do not already exist (idempotent)."""
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS tracks (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +80,7 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 
 def _row_to_track(row: sqlite3.Row) -> Track:
+    """Convert a raw DB row to a Track, parsing the ISO datetime string for ``date_downloaded``."""
     date_dl = row["date_downloaded"]
     return Track(
         id=row["id"],
@@ -93,6 +100,11 @@ def _row_to_track(row: sqlite3.Row) -> Track:
 
 
 def insert_track(conn: sqlite3.Connection, track: Track) -> int:
+    """Insert a track row, or return the existing id if title+artist already exist.
+
+    Deduplication by (title, artist) prevents duplicate rows when an album batch
+    download fires concurrent workers for the same track.
+    """
     existing = conn.execute(
         "SELECT id FROM tracks WHERE title=? AND artist=?",
         (track.title, track.artist),
@@ -129,6 +141,11 @@ def update_track_status(
     youtube_url: str | None = None,
     duration: int | None = None,
 ) -> None:
+    """Update any subset of track fields; keyword-only args prevent positional mistakes.
+
+    Only non-None arguments produce SET clauses, so callers can update a single
+    field without overwriting others.
+    """
     fields, values = [], []
     for col, val in [
         ("download_status", download_status),
@@ -155,6 +172,7 @@ def update_lyrics_status(conn: sqlite3.Connection, track_id: int, status: str) -
 
 
 def get_tracks_without_lyrics(conn: sqlite3.Connection) -> list[Track]:
+    """Return all tracks whose lyrics have never been attempted (status = not_fetched)."""
     rows = conn.execute(
         "SELECT * FROM tracks WHERE lyrics_status=?", (LyricsStatus.NOT_FETCHED,)
     ).fetchall()
@@ -166,6 +184,12 @@ def get_all_tracks(
     order_by: str = "date_downloaded DESC",
     audio_format: str | None = None,
 ) -> list[Track]:
+    """Return all tracks, optionally filtered by format and sorted by ``order_by``.
+
+    ``order_by`` is validated against ``_ALLOWED_ORDER_BY`` before being
+    interpolated into the query — the whitelist prevents SQL injection via
+    the f-string.
+    """
     if order_by not in _ALLOWED_ORDER_BY:
         order_by = "date_downloaded DESC"
     if audio_format:
@@ -244,6 +268,7 @@ def get_auto_playlist_count(conn: sqlite3.Connection) -> int:
 
 
 def delete_oldest_auto_playlist(conn: sqlite3.Connection) -> None:
+    """Delete the least-recently-updated auto playlist to enforce the 15-playlist cap."""
     row = conn.execute(
         "SELECT id FROM playlists WHERE type=? ORDER BY updated_at ASC LIMIT 1",
         (PlaylistType.AUTO,),
@@ -276,6 +301,7 @@ def update_playlist_name(conn: sqlite3.Connection, playlist_id: int, name: str) 
 
 
 def add_track_to_playlist(conn: sqlite3.Connection, playlist_id: int, track_id: int) -> None:
+    """Append a track to the playlist at the next available position (idempotent via INSERT OR IGNORE)."""
     row = conn.execute(
         "SELECT MAX(position) FROM playlist_tracks WHERE playlist_id=?", (playlist_id,)
     ).fetchone()

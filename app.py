@@ -16,6 +16,7 @@ log = get_logger("app")
 
 
 def main():
+    """Application entry point: init DB, quick scan, create pywebview window, wire lifecycle hooks."""
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
         "com.claudefm.app")
     log.info("ClaudeFM starting")
@@ -51,6 +52,12 @@ def main():
     event_bus.set_window(window)
 
     def on_loaded():
+        """Called by pywebview when the HTML page has finished loading.
+
+        Redirects to the settings page if the Last.fm key or download folder is
+        not configured. Restores the last playback position, then starts a
+        background library scan.
+        """
         settings = get_all_settings(conn)
         if not settings.get("lastfm_api_key") or not settings.get("download_folder"):
             window.evaluate_js("router.navigate('settings')")
@@ -64,6 +71,7 @@ def main():
             start_background_scan(conn, folders)
 
     def on_closing():
+        """Persist playback state and shut down the download executor before the window closes."""
         q = api._player.queue
         track_id = q.current_id()
         position = api._player.get_position()

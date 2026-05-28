@@ -12,26 +12,42 @@ log = get_logger("lrclib")
 
 
 class LRCLibFetcher:
+    """Thin wrapper around the lrcup LRCLib client, isolated for testability."""
+
     def __init__(self):
         self._client = LRCLib()
 
     def get(self, title: str, artist: str, album: str, duration: int):
+        """Fetch lyrics by exact track metadata (preferred — duration-matched result)."""
         return self._client.get(track=title, artist=artist, album=album, duration=duration)
 
     def search(self, title: str, artist: str):
+        """Fuzzy-search for lyrics and return the first result, or None if not found."""
         results = self._client.search(track=title, artist=artist)
         return results[0] if results else None
 
 
 class LyricsEmbedder:
+    """Read/write lyrics tags in audio files via lrcup's AudioFile abstraction."""
+
     def embed(self, file_path: str, state: str, lyrics: str) -> None:
+        """Write lyrics to the file's tags (``state`` is ``'synced'`` or ``'unsynced'``)."""
         AudioFile(Path(file_path)).set_lyrics(state=state, lyrics=lyrics)
 
     def read(self, file_path: str) -> str | None:
+        """Read embedded lyrics text from the file's tags, or None if absent."""
         return AudioFile(Path(file_path)).get_lyrics()
 
 
 class LRCLibService:
+    """Orchestrates lyrics fetching from LRCLIB and embedding into audio file tags.
+
+    Fetch strategy per track: try ``LRCLibFetcher.get`` (duration-matched) first,
+    fall back to ``LRCLibFetcher.search`` if the result is None, then embed
+    synced lyrics preferring over plain text. ``UnsupportedSuffix`` maps to
+    ``NOT_SUPPORTED`` status so unsupported formats don't re-trigger fetches.
+    """
+
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
         self._running = threading.Event()
@@ -39,6 +55,11 @@ class LRCLibService:
         self._embedder = LyricsEmbedder()
 
     def fetch_and_embed(self, track_id: int) -> str | None:
+        """Fetch and embed lyrics for one track; return the resulting ``LyricsStatus`` value or None.
+
+        Returns None only if the track doesn't exist or has no file_path.
+        All other outcomes (not found, instrumental, error) return a status string.
+        """
         track = get_track(self._conn, track_id)
         if not track or not track.file_path:
             return None
@@ -90,14 +111,25 @@ class LRCLibService:
         return status
 
     def fetch_and_embed_async(self, track_id: int) -> None:
+        """Run ``fetch_and_embed`` in a daemon thread (fire-and-forget, used post-download)."""
         threading.Thread(target=self.fetch_and_embed, args=(track_id,), daemon=True).start()
 
     def fetch_missing_lyrics(self) -> None:
+        """Start a batch lyrics fetch for all ``not_fetched`` tracks, if not already running.
+
+        Uses ``_running`` (a threading.Event) as a singleton guard — a second
+        call while a batch is active is silently ignored.
+        """
         if not self._running.is_set():
             self._running.set()
             threading.Thread(target=self._run_batch, daemon=True).start()
 
     def _run_batch(self) -> None:
+        """Batch thread target: fetch lyrics for every not_fetched track and emit per-track progress events.
+
+        Emits ``lyrics_progress`` after each track and ``lyrics_fetch_complete``
+        with aggregate counters when done. Clears ``_running`` at the end.
+        """
         tracks = get_tracks_without_lyrics(self._conn)
         counters = {
             "synchronized": 0, "plain_text": 0, "instrumental": 0,
@@ -119,6 +151,11 @@ class LRCLibService:
         event_bus.emit("lyrics_fetch_complete", counters)
 
     def get_lyrics(self, track_id: int) -> dict | None:
+        """Read embedded lyrics from the audio file and return them with the track's lyrics_status.
+
+        Returns None if the track doesn't exist, has no file_path, or the read
+        raises an exception.
+        """
         track = get_track(self._conn, track_id)
         if not track or not track.file_path:
             return None
