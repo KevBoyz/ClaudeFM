@@ -29,6 +29,10 @@
 | `tests/test_cover_art_service.py` | Tests for `artwork_status` + `artwork_fetched_at` writes |
 | `tests/test_lrclib_service.py` | Tests for `lyrics_fetched_at` writes + new batch query usage |
 | `tests/test_enrichment_scheduler.py` | **New** — scheduler delegation + artwork batch logic tests |
+| `src/services/cover_art_service.py` | Add `CoverArtEmbedder.read_bytes()` + `CoverArtService.get_cover_bytes()` |
+| `src/api/api.py` | Add `get_track_artwork()` — reads embedded bytes, returns base64 data URL |
+| `src/interface/scripts/components.js` | `trackCard()` marks embedded thumbs; `loadArtwork()` lazy-loads them |
+| `src/interface/scripts/pages/*.js` | Call `loadArtwork(container)` after each track list render |
 
 ---
 
@@ -1500,4 +1504,250 @@ Expected: all tests pass.
 ```bash
 git add src/interface/scripts/topbar.js
 git commit -m "feat(topbar): track lyrics and artwork enrichment progress in badge and panel"
+```
+
+---
+
+## Task 8: Display Embedded Cover Art on Track Cards
+
+**Files:**
+- Modify: `src/services/cover_art_service.py` — add `CoverArtEmbedder.read_bytes()` + `CoverArtService.get_cover_bytes()`
+- Modify: `src/api/api.py` — add `get_track_artwork()` method
+- Modify: `src/interface/scripts/api.js` — add `get_track_artwork` entry
+- Modify: `src/interface/scripts/components.js` — lazy-load artwork after rendering track cards
+- Test: `tests/test_cover_art_service.py`
+
+### Context
+
+`CoverArtService.fetch_and_embed()` writes image bytes into audio file tags (M4A `covr`, MP3 `APIC`). The frontend currently shows a `♪` placeholder for all tracks. This task reads those bytes back and serves them as base64 data URLs so track cards can display cover art.
+
+**Read strategy:**
+- M4A: `MP4(file_path).tags['covr'][0]` → `bytes(cover_data)`
+- MP3: iterate `ID3(file_path).values()`, find first `APIC` frame → `.data`
+
+**Display strategy:** `trackCard()` adds `data-artwork="${track.id}"` on the thumb when `track.artwork_status === 'embedded'`. After inserting HTML into the DOM, pages call `loadArtwork(container)` which fires one `api.get_track_artwork()` per pending thumb and sets `<img>` on success.
+
+- [ ] **Step 1: Write failing tests**
+
+Add to `tests/test_cover_art_service.py`:
+
+```python
+import base64
+from mutagen.mp4 import MP4, MP4Cover
+from mutagen.id3 import ID3, APIC
+
+
+def test_read_bytes_returns_bytes_from_m4a(tmp_path, mocker):
+    fake_path = str(tmp_path / "test.m4a")
+    image_bytes = b'\xff\xd8\xff\xe0JPEG_DATA'
+
+    mock_mp4 = mocker.MagicMock()
+    mock_cover = mocker.MagicMock()
+    mock_cover.__bytes__ = mocker.MagicMock(return_value=image_bytes)
+    mock_mp4.tags = {'covr': [mock_cover]}
+    mocker.patch('src.services.cover_art_service.MP4', return_value=mock_mp4)
+
+    embedder = CoverArtEmbedder()
+    result = embedder.read_bytes(fake_path)
+    assert result == image_bytes
+
+
+def test_read_bytes_returns_none_when_no_covr_tag(tmp_path, mocker):
+    fake_path = str(tmp_path / "test.m4a")
+    mock_mp4 = mocker.MagicMock()
+    mock_mp4.tags = {}
+    mocker.patch('src.services.cover_art_service.MP4', return_value=mock_mp4)
+
+    embedder = CoverArtEmbedder()
+    result = embedder.read_bytes(fake_path)
+    assert result is None
+
+
+def test_read_bytes_returns_bytes_from_mp3(tmp_path, mocker):
+    fake_path = str(tmp_path / "test.mp3")
+    image_bytes = b'\xff\xd8\xff\xe0JPEG_DATA'
+
+    mock_apic = mocker.MagicMock(spec=APIC)
+    mock_apic.data = image_bytes
+    mock_id3 = mocker.MagicMock()
+    mock_id3.values.return_value = [mock_apic]
+    mocker.patch('src.services.cover_art_service.ID3', return_value=mock_id3)
+    mocker.patch('src.services.cover_art_service.ID3NoHeaderError', Exception)
+
+    embedder = CoverArtEmbedder()
+    result = embedder.read_bytes(fake_path)
+    assert result == image_bytes
+
+
+def test_get_cover_bytes_returns_bytes_when_embedded(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="Song", artist="Artist", album="Album",
+                                      file_path="/fake/song.m4a"))
+    update_track_status(db_conn, tid, download_status="completed")
+
+    mock_lastfm = MagicMock()
+    svc = CoverArtService(db_conn, mock_lastfm)
+    image_bytes = b'\xff\xd8\xff\xe0JPEG'
+    svc._embedder = MagicMock()
+    svc._embedder.read_bytes.return_value = image_bytes
+
+    result = svc.get_cover_bytes(tid)
+    assert result == image_bytes
+
+
+def test_get_cover_bytes_returns_none_for_missing_track(db_conn):
+    init_db(db_conn)
+    mock_lastfm = MagicMock()
+    svc = CoverArtService(db_conn, mock_lastfm)
+    assert svc.get_cover_bytes(9999) is None
+```
+
+- [ ] **Step 2: Run failing tests**
+
+```
+.venv/Scripts/python.exe -m pytest tests/test_cover_art_service.py -k "read_bytes or get_cover_bytes" -v
+```
+
+Expected: FAIL — `CoverArtEmbedder` has no `read_bytes`, `CoverArtService` has no `get_cover_bytes`.
+
+- [ ] **Step 3: Add `read_bytes` to `CoverArtEmbedder` and `get_cover_bytes` to `CoverArtService`**
+
+In `src/services/cover_art_service.py`, add `read_bytes` method to `CoverArtEmbedder` after `embed()`:
+
+```python
+    def read_bytes(self, file_path: str) -> bytes | None:
+        ext = Path(file_path).suffix.lower()
+        try:
+            if ext == '.m4a':
+                audio = MP4(file_path)
+                if audio.tags and 'covr' in audio.tags:
+                    return bytes(audio.tags['covr'][0])
+            elif ext == '.mp3':
+                try:
+                    audio = ID3(file_path)
+                except ID3NoHeaderError:
+                    return None
+                for tag in audio.values():
+                    if isinstance(tag, APIC):
+                        return tag.data
+        except Exception as e:
+            log.debug(f"read_bytes failed for {file_path}: {e}")
+        return None
+```
+
+Add `get_cover_bytes` method to `CoverArtService` after `fetch_and_embed_async()`:
+
+```python
+    def get_cover_bytes(self, track_id: int) -> bytes | None:
+        track = get_track(self._conn, track_id)
+        if not track or not track.file_path:
+            return None
+        return self._embedder.read_bytes(track.file_path)
+```
+
+- [ ] **Step 4: Run cover art tests**
+
+```
+.venv/Scripts/python.exe -m pytest tests/test_cover_art_service.py -v
+```
+
+Expected: all pass.
+
+- [ ] **Step 5: Add `get_track_artwork` to `api.py`**
+
+Add the import `import base64` at the top of `src/api/api.py`.
+
+Add this method in the Lyrics section (or after `remove_from_library`):
+
+```python
+def get_track_artwork(self, track_id: int) -> str:
+    try:
+        image_bytes = self._get_cover_art().get_cover_bytes(track_id)
+        if not image_bytes:
+            return _err("No artwork")
+        data_url = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode()
+        return _ok({"data_url": data_url})
+    except Exception as e:
+        log.error(f"get_track_artwork: {e}", exc_info=True)
+        return _err(str(e))
+```
+
+- [ ] **Step 6: Add `get_track_artwork` to `api.js`**
+
+In the Library section of `src/interface/scripts/api.js`, add:
+
+```javascript
+    get_track_artwork:    (id)            => _call('get_track_artwork', id),
+```
+
+- [ ] **Step 7: Update `trackCard()` and add `loadArtwork()` in `components.js`**
+
+In `trackCard()`, replace the static thumb:
+
+```javascript
+// OLD:
+  return `<div class="track-card${playing ? ' playing' : ''}" data-track-id="${track.id}"
+      onclick="player.play(${track.id}, _pageQueue)">
+    <div class="track-card-thumb">♪</div>
+```
+
+with:
+
+```javascript
+// NEW:
+  const hasArtwork = track.artwork_status === 'embedded';
+  return `<div class="track-card${playing ? ' playing' : ''}" data-track-id="${track.id}"
+      onclick="player.play(${track.id}, _pageQueue)">
+    <div class="track-card-thumb"${hasArtwork ? ` data-artwork="${track.id}"` : ''}>♪</div>
+```
+
+Then add `loadArtwork()` function after `trackCard()`:
+
+```javascript
+async function loadArtwork(container) {
+  const thumbs = (container || document).querySelectorAll('.track-card-thumb[data-artwork]');
+  for (const thumb of thumbs) {
+    const trackId = parseInt(thumb.dataset.artwork);
+    delete thumb.dataset.artwork;  // prevent double-load on re-renders
+    try {
+      const result = await api.get_track_artwork(trackId);
+      if (result?.data?.data_url) {
+        thumb.innerHTML = `<img src="${result.data.data_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:4px">`;
+      }
+    } catch (_) {}
+  }
+}
+```
+
+- [ ] **Step 8: Call `loadArtwork` after rendering in all library pages**
+
+Search for every place that renders track cards (calls `trackCard()`/`container.innerHTML = ...`) in the pages scripts. After each render, call `loadArtwork(container)`.
+
+The pages that render track lists are: `home.js` (or similar), `library.js`, `artists.js` (artist detail), `albums.js` (album detail), `playlists.js` (playlist detail), `lastfm-artist.js`, `lastfm-album.js`.
+
+Run this to find all render locations:
+
+```
+grep -r "trackCard\|innerHTML" src/interface/scripts/pages/ --include="*.js" -l
+```
+
+In each page, after the line that sets `container.innerHTML` (or appends track cards), add:
+
+```javascript
+loadArtwork(container);
+```
+
+- [ ] **Step 9: Run full test suite**
+
+```
+.venv/Scripts/python.exe -m pytest tests/ -v
+```
+
+Expected: all tests pass.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add src/services/cover_art_service.py src/api/api.py src/interface/scripts/api.js src/interface/scripts/components.js src/interface/scripts/pages/ tests/test_cover_art_service.py
+git commit -m "feat: serve embedded cover art as base64 data URL and display on track cards"
 ```
