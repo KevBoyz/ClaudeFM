@@ -2,7 +2,7 @@ import json
 import socket
 import sqlite3
 from src.database.database import (
-    get_all_tracks, get_track, insert_track, update_track_status,
+    get_all_tracks, get_track, insert_track, update_track_status, delete_track,
     get_tracks_by_artist, get_tracks_by_album, search_tracks_local,
     get_all_artists, get_all_albums,
     insert_playlist, get_all_playlists, get_playlist_tracks,
@@ -17,6 +17,7 @@ from src.services.lastfm_service import LastFMService
 from src.services.youtube_service import YouTubeService
 from src.services.player_service import PlayerService
 from src.services.lrclib_service import LRCLibService
+from src.services.cover_art_service import CoverArtService
 from src.utils.logger import get_logger
 from src.utils.event_bus import event_bus
 
@@ -48,6 +49,7 @@ class ClaudeFMAPI:
         self._youtube: YouTubeService | None = None
         self._lastfm: LastFMService | None = None
         self._lrclib: LRCLibService | None = None
+        self._cover_art: CoverArtService | None = None
 
     def _get_youtube(self) -> YouTubeService:
         if self._youtube is None:
@@ -65,16 +67,28 @@ class ClaudeFMAPI:
             self._lrclib = LRCLibService(self._conn)
         return self._lrclib
 
-    def _lyrics_hook(self):
-        """Return ``LRCLibService.fetch_and_embed_async`` if auto_fetch_lyrics is enabled, else None.
+    def _get_cover_art(self) -> CoverArtService:
+        if self._cover_art is None:
+            self._cover_art = CoverArtService(self._conn, self._get_lastfm())
+        return self._cover_art
 
-        Used as the ``on_complete`` callback for ``YouTubeService.queue_download``
-        so lyrics are fetched automatically after each download without coupling
-        the two services directly.
+    def _post_download_hook(self):
+        """Return a combined callback that runs artwork + lyrics fetching after a download.
+
+        Checks the auto_fetch_artwork and auto_fetch_lyrics settings at call time
+        so settings changes take effect on the next download without restarting.
         """
+        hooks = []
+        if get_setting(self._conn, "auto_fetch_artwork") == "true":
+            hooks.append(self._get_cover_art().fetch_and_embed_async)
         if get_setting(self._conn, "auto_fetch_lyrics") == "true":
-            return self._get_lrclib().fetch_and_embed_async
-        return None
+            hooks.append(self._get_lrclib().fetch_and_embed_async)
+        if not hooks:
+            return None
+        def combined(track_id: int) -> None:
+            for h in hooks:
+                h(track_id)
+        return combined
 
     # ── Library ──────────────────────────────────────────────────────────────
 
@@ -163,11 +177,19 @@ class ClaudeFMAPI:
         except Exception as e:
             return _err(str(e))
 
+    def remove_from_library(self, track_id: int) -> str:
+        try:
+            delete_track(self._conn, track_id)
+            return _ok()
+        except Exception as e:
+            log.error(f"remove_from_library: {e}", exc_info=True)
+            return _err(str(e))
+
     # ── Downloads ─────────────────────────────────────────────────────────────
 
     def queue_download(self, track_id: int) -> str:
         try:
-            self._get_youtube().queue_download(track_id, on_complete=self._lyrics_hook())
+            self._get_youtube().queue_download(track_id, on_complete=self._post_download_hook())
             return _ok()
         except Exception as e:
             log.error(f"queue_download: {e}", exc_info=True)
@@ -182,7 +204,7 @@ class ClaudeFMAPI:
         try:
             t = Track(title=title, artist=artist, album=album)
             track_id = insert_track(self._conn, t)
-            self._get_youtube().queue_download(track_id, on_complete=self._lyrics_hook())
+            self._get_youtube().queue_download(track_id, on_complete=self._post_download_hook())
             return json.dumps({"success": True, "track_id": track_id})
         except Exception as e:
             return _err(str(e))
@@ -216,6 +238,10 @@ class ClaudeFMAPI:
 
     def resume(self) -> str:
         self._player.resume()
+        return _ok()
+
+    def stop(self) -> str:
+        self._player.stop()
         return _ok()
 
     def next_track(self) -> str:

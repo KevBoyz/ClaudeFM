@@ -31,6 +31,7 @@ DEFAULTS: dict[str, str] = {  # fallback values used when a key is absent from t
     "player_last_context": "",
     "download_concurrency": "2",
     "auto_fetch_lyrics": "true",
+    "auto_fetch_artwork": "true",
     "player_volume": "1.0",
 }
 

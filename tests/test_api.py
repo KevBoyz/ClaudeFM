@@ -143,22 +143,30 @@ def test_get_lyrics_track_not_found(db_conn, tmp_path):
 def test_queue_download_wires_async_hook_when_auto_fetch_enabled(db_conn, tmp_path):
     init_db(db_conn)
     set_setting(db_conn, "auto_fetch_lyrics", "true")
+    set_setting(db_conn, "auto_fetch_artwork", "true")
     track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
     api = _make_api(db_conn, tmp_path)
 
-    with patch("src.api.api.LRCLibService") as MockSvc, \
+    with patch("src.api.api.LRCLibService") as MockLrclib, \
+         patch("src.api.api.CoverArtService") as MockCoverArt, \
+         patch("src.api.api.LastFMService"), \
          patch("src.api.api.YouTubeService") as MockYT:
-        expected_hook = MockSvc.return_value.fetch_and_embed_async
+        lrclib_hook = MockLrclib.return_value.fetch_and_embed_async
+        artwork_hook = MockCoverArt.return_value.fetch_and_embed_async
         api.queue_download(track_id)
 
-    MockYT.return_value.queue_download.assert_called_once_with(
-        track_id, on_complete=expected_hook
-    )
+    call_kwargs = MockYT.return_value.queue_download.call_args
+    combined = call_kwargs.kwargs["on_complete"]
+    assert combined is not None
+    combined(track_id)
+    artwork_hook.assert_called_once_with(track_id)
+    lrclib_hook.assert_called_once_with(track_id)
 
 
 def test_queue_download_no_hook_when_auto_fetch_disabled(db_conn, tmp_path):
     init_db(db_conn)
     set_setting(db_conn, "auto_fetch_lyrics", "false")
+    set_setting(db_conn, "auto_fetch_artwork", "false")
     track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
     api = _make_api(db_conn, tmp_path)
 
