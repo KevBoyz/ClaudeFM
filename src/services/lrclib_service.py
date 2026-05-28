@@ -104,6 +104,11 @@ class LRCLibService:
             update_lyrics_status(self._conn, track_id, LyricsStatus.NOT_SUPPORTED)
             update_lyrics_fetched_at(self._conn, track_id, now)
             return LyricsStatus.NOT_SUPPORTED
+        except Exception as e:
+            log.error(f"Failed to embed lyrics for track {track_id}: {e}", exc_info=True)
+            update_lyrics_status(self._conn, track_id, LyricsStatus.NOT_FETCHED)
+            update_lyrics_fetched_at(self._conn, track_id, now)
+            return LyricsStatus.NOT_FETCHED
 
         update_lyrics_status(self._conn, track_id, status)
         update_lyrics_fetched_at(self._conn, track_id, now)
