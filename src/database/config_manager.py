@@ -1,8 +1,24 @@
 import sqlite3
+import winreg
+from pathlib import Path
+
+
+def _windows_music_folder() -> str:
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+        )
+        path, _ = winreg.QueryValueEx(key, "My Music")
+        key.Close()
+        return path
+    except Exception:
+        return str(Path.home() / "Music")
+
 
 DEFAULTS: dict[str, str] = {
     "lastfm_api_key": "",
-    "download_folder": "C:\\music",
+    "download_folder": _windows_music_folder(),
     "additional_folders": "[]",
     "audio_format": "m4a",
     "cache_enabled": "true",

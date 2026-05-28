@@ -8,12 +8,14 @@ from src.database.database import (
     get_all_tracks, insert_track, update_track_status
 )
 from src.models.track import Track
+from src.models.enums import DownloadStatus, FileStatus
 from src.utils.logger import get_logger
 from src.utils.event_bus import event_bus
 
 log = get_logger("file_manager")
 
-AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".wav", ".opus"}
+AUDIO_EXTENSIONS = {".mp3", ".m4a"}
+_UNKNOWN_ARTIST = "Unknown Artist"
 
 
 def _get_tag(tags: dict, *keys: str, default: str) -> str:
@@ -25,7 +27,7 @@ def _get_tag(tags: dict, *keys: str, default: str) -> str:
 
 def _extract_metadata(path: Path) -> dict:
     title = path.stem
-    artist = "Unknown Artist"
+    artist = _UNKNOWN_ARTIST
     duration = None
     try:
         meta = mutagen.File(path)
@@ -43,7 +45,7 @@ def quick_scan(conn: sqlite3.Connection) -> None:
     tracks = get_all_tracks(conn)
     for track in tracks:
         if track.file_path and not Path(track.file_path).exists():
-            update_track_status(conn, track.id, file_status="missing")
+            update_track_status(conn, track.id, file_status=FileStatus.MISSING)
             log.info(f"Marked missing: {track.file_path}")
 
 
@@ -74,8 +76,8 @@ def full_scan(conn: sqlite3.Connection, folders: list[str]) -> int:
                 duration=meta["duration"],
                 file_path=path_str,
                 audio_format=meta["audio_format"],
-                download_status="completed",
-                file_status="available",
+                download_status=DownloadStatus.COMPLETED,
+                file_status=FileStatus.AVAILABLE,
             )
             insert_track(conn, track)
             added += 1

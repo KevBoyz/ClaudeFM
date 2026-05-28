@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from src.models.track import Track
 from src.models.playlist import Playlist
+from src.models.enums import LyricsStatus, PlaylistType
 
 _ALLOWED_ORDER_BY = {
     "date_downloaded DESC", "date_downloaded ASC",
@@ -155,7 +156,7 @@ def update_lyrics_status(conn: sqlite3.Connection, track_id: int, status: str) -
 
 def get_tracks_without_lyrics(conn: sqlite3.Connection) -> list[Track]:
     rows = conn.execute(
-        "SELECT * FROM tracks WHERE lyrics_status='not_fetched'"
+        "SELECT * FROM tracks WHERE lyrics_status=?", (LyricsStatus.NOT_FETCHED,)
     ).fetchall()
     return [_row_to_track(r) for r in rows]
 
@@ -237,12 +238,15 @@ def get_all_playlists(conn: sqlite3.Connection) -> list[Playlist]:
 
 
 def get_auto_playlist_count(conn: sqlite3.Connection) -> int:
-    return conn.execute("SELECT COUNT(*) FROM playlists WHERE type='auto'").fetchone()[0]
+    return conn.execute(
+        "SELECT COUNT(*) FROM playlists WHERE type=?", (PlaylistType.AUTO,)
+    ).fetchone()[0]
 
 
 def delete_oldest_auto_playlist(conn: sqlite3.Connection) -> None:
     row = conn.execute(
-        "SELECT id FROM playlists WHERE type='auto' ORDER BY updated_at ASC LIMIT 1"
+        "SELECT id FROM playlists WHERE type=? ORDER BY updated_at ASC LIMIT 1",
+        (PlaylistType.AUTO,),
     ).fetchone()
     if row:
         conn.execute("DELETE FROM playlists WHERE id=?", (row["id"],))
