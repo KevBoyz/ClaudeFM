@@ -56,6 +56,15 @@ const settingsPage = (() => {
             </label>
           </div>
         </div>
+        <div class="settings-row">
+          <span class="settings-label">Auto-embed cover art</span>
+          <div class="settings-field">
+            <label class="settings-toggle">
+              <input type="checkbox" id="set-autoart" ${_settings.auto_fetch_artwork==='true'?'checked':''}>
+              <span class="settings-toggle-track"></span>
+            </label>
+          </div>
+        </div>
       </div>
 
       <div class="settings-section">
@@ -121,6 +130,7 @@ const settingsPage = (() => {
           api.save_setting('download_folder',       newFolder),
           api.save_setting('audio_format',          fmt),
           api.save_setting('auto_fetch_lyrics',     document.getElementById('set-autolyr').checked ? 'true' : 'false'),
+          api.save_setting('auto_fetch_artwork',    document.getElementById('set-autoart').checked ? 'true' : 'false'),
           api.save_setting('search_results_limit',  document.getElementById('set-limit').value),
           api.save_setting('cache_enabled',         document.getElementById('set-cache').checked ? 'true' : 'false'),
           api.save_setting('theme',                 document.getElementById('set-theme').value),

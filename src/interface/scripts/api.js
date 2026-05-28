@@ -50,6 +50,7 @@ const api = (() => {
     search_local:         (query)         => _call('search_local', query),
     get_tracks_by_artist: (artist)        => _call('get_tracks_by_artist', artist),
     get_tracks_by_album:  (album, artist) => _call('get_tracks_by_album', album, artist),
+    remove_from_library:  (id)            => _call('remove_from_library', id),
 
     // Last.fm
     search_lastfm:          (query, type)          => _call('search_lastfm', query, type),
@@ -65,6 +66,7 @@ const api = (() => {
     play:            (id, context = {})  => _call('play', id, JSON.stringify(context)),
     pause:           ()                  => _call('pause'),
     resume:          ()                  => _call('resume'),
+    stop:            ()                  => _call('stop'),
     next_track:      ()                  => _call('next_track'),
     prev_track:      ()                  => _call('prev_track'),
     seek:            (pos)               => _call('seek', pos),

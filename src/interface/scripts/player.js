@@ -81,6 +81,19 @@ const player = (() => {
     }
   }
 
+  async function stop() {
+    await api.stop();
+    state.track = null;
+    state.playing = false;
+    state.position = 0;
+    state.duration = 0;
+    state.queue = [];
+    state.queueIndex = 0;
+    state.queueName = '';
+    _stopTick();
+    document.dispatchEvent(new CustomEvent('player:changed', { detail: { ...state } }));
+  }
+
   async function seek(position) {
     await api.seek(position);
     state.position = position;
@@ -124,5 +137,5 @@ const player = (() => {
     document.dispatchEvent(new CustomEvent('player:changed', { detail: { ...state } }));
   });
 
-  return { state, play, pause, resume, next, prev, seek, setVolume, onEnded, onQueueEnded, onRestore };
+  return { state, play, pause, resume, stop, next, prev, seek, setVolume, onEnded, onQueueEnded, onRestore };
 })();

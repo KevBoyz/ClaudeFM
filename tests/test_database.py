@@ -4,7 +4,7 @@ from src.database.database import (
     init_db, insert_track, get_track, update_track_status, get_all_tracks,
     update_lyrics_status, get_tracks_without_lyrics,
     get_tracks_by_artist, get_tracks_by_album, get_all_artists, get_all_albums,
-    search_tracks_local,
+    search_tracks_local, delete_track,
     insert_playlist, get_all_playlists, get_auto_playlist_count,
     delete_oldest_auto_playlist, get_playlist_tracks, delete_playlist,
     update_playlist_name, add_track_to_playlist, remove_track_from_playlist,
@@ -274,3 +274,19 @@ def test_remove_track_from_playlist(db_conn):
 def test_get_playlist_tracks_empty_for_missing_playlist(db_conn):
     init_db(db_conn)
     assert get_playlist_tracks(db_conn, 9999) == []
+
+
+def test_delete_track_removes_from_tracks(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="Ghost", artist="Indigo De Souza"))
+    delete_track(db_conn, tid)
+    assert get_track(db_conn, tid) is None
+
+
+def test_delete_track_cascades_to_playlist_tracks(db_conn):
+    init_db(db_conn)
+    pid = insert_playlist(db_conn, Playlist(name="Favs", type="manual"))
+    tid = insert_track(db_conn, Track(title="Ghost", artist="Indigo De Souza"))
+    add_track_to_playlist(db_conn, pid, tid)
+    delete_track(db_conn, tid)
+    assert get_playlist_tracks(db_conn, pid) == []

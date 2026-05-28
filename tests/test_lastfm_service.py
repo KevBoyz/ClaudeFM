@@ -2,6 +2,7 @@
 import json
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
+import pylast
 from src.database.database import init_db
 from src.services.lastfm_service import LastFMService
 
@@ -242,3 +243,55 @@ def test_get_album_tracks_api_error_returns_empty(db_conn):
         mock_net.return_value.get_album.side_effect = Exception("API error")
         result = svc.get_album_tracks("Ghost Album", "Nobody")
     assert result == []
+
+
+# ── get_cover_image_url ───────────────────────────────────────────────────────
+
+def test_get_cover_image_url_with_album(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    mock_album = MagicMock()
+    mock_album.get_cover_image.return_value = 'https://cdn.com/cover.jpg'
+    with patch.object(svc, '_get_network') as mock_net:
+        mock_net.return_value.get_album.return_value = mock_album
+        url = svc.get_cover_image_url('Radiohead', 'OK Computer')
+    assert url == 'https://cdn.com/cover.jpg'
+    mock_net.return_value.get_album.assert_called_once_with('Radiohead', 'OK Computer')
+    mock_album.get_cover_image.assert_called_once_with(pylast.SIZE_EXTRA_LARGE)
+
+
+def test_get_cover_image_url_falls_back_to_artist(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    mock_artist = MagicMock()
+    mock_artist.get_cover_image.return_value = 'https://cdn.com/artist.jpg'
+    with patch.object(svc, '_get_network') as mock_net:
+        mock_net.return_value.get_artist.return_value = mock_artist
+        url = svc.get_cover_image_url('Radiohead')
+    assert url == 'https://cdn.com/artist.jpg'
+
+
+def test_get_cover_image_url_returns_none_without_api_key(db_conn):
+    init_db(db_conn)
+    svc = LastFMService(db_conn, api_key='')
+    assert svc.get_cover_image_url('Radiohead', 'OK Computer') is None
+
+
+def test_get_cover_image_url_returns_none_on_api_error(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    with patch.object(svc, '_get_network') as mock_net:
+        mock_net.return_value.get_album.side_effect = Exception('API error')
+        url = svc.get_cover_image_url('Radiohead', 'OK Computer')
+    assert url is None
+
+
+def test_get_cover_image_url_returns_none_when_empty_string(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    mock_album = MagicMock()
+    mock_album.get_cover_image.return_value = ''
+    with patch.object(svc, '_get_network') as mock_net:
+        mock_net.return_value.get_album.return_value = mock_album
+        url = svc.get_cover_image_url('Radiohead', 'OK Computer')
+    assert url is None

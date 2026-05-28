@@ -15,7 +15,7 @@ Desktop music player for Windows: search Last.fm → download from YouTube → p
 | DB | sqlite3 stdlib | WAL + FK + `check_same_thread=False` |
 | Models | pydantic 2.13.4 | Mirror DB schema exactly |
 | Tags | mutagen 1.47.0 | Audio file metadata r/w |
-| Tests | pytest 8.2.0 + pytest-mock 3.14.0 | 93 tests, 13 modules |
+| Tests | pytest 8.2.0 + pytest-mock 3.14.0 | 213 tests, 14 modules |
 
 ## Commands
 
@@ -48,10 +48,11 @@ src/
     config_manager.py           # Key/value settings with DEFAULTS dict
     file_manager.py             # quick_scan (blocking) + start_background_scan
   services/
-    lastfm_service.py           # pylast search + cache table + get_artist_top_tracks
+    lastfm_service.py           # pylast search + cache table + get_artist_top_tracks + get_cover_image_url
     youtube_service.py          # yt-dlp download + sanitize_filename + ThreadPoolExecutor
     player_service.py           # sounddevice playback + Queue + seek + volume + threading.Lock
     lrclib_service.py           # LRCLIB fetch + mutagen embed + async batch fetch
+    cover_art_service.py        # Last.fm cover art fetch + mutagen embed (M4A/MP3)
   api/
     api.py                      # ClaudeFMAPI — all methods callable from JS via pywebview js_api
   utils/
@@ -103,6 +104,7 @@ DB file: `claudefm.db` at project root (gitignored).
 | `cache_enabled` | `true` |
 | `sidebar_collapsed` | `false` |
 | `auto_fetch_lyrics` | `true` |
+| `auto_fetch_artwork` | `true` |
 | `player_volume` | `1.0` |
 
 ## API Response Format
@@ -137,7 +139,9 @@ Push events via `event_bus.emit(type, payload)` → `window.evaluate_js("onEvent
 | `on_complete` callback in `YouTubeService.queue_download` | Allows `LRCLibService.fetch_and_embed_async` to be injected post-download without coupling layers |
 | `_active` set + `threading.Lock` in `YouTubeService` | Prevents concurrent workers downloading the same track_id (e.g. album batch) |
 | `insert_track` dedup by title+artist | `SELECT` before `INSERT` returns existing id; prevents duplicate rows on concurrent album downloads |
-| `_lyrics_hook()` method on `ClaudeFMAPI` | Single place for auto_fetch_lyrics check; used by both `queue_download` and `download_lastfm_track` |
+| `_post_download_hook()` on `ClaudeFMAPI` | Composite callback chaining artwork + lyrics after download; replaces `_lyrics_hook()`; checks both `auto_fetch_artwork` and `auto_fetch_lyrics` settings at call time |
+| `CoverArtService` lazy init in `api.py` | Same pattern as `LRCLibService`; avoids init before Last.fm API key is configured |
+| `playlist_tracks` `ON DELETE CASCADE` on `track_id` | Deleting a track from `tracks` auto-removes all playlist entries — no manual cleanup needed |
 | `is_paused` property on `PlayerService` | Thread-safe read via `_lock`; avoids external modules accessing `_paused` directly |
 | PortAudio reinit before each `_playback_thread` | `sd._terminate()` + `sd._initialize()` forces PortAudio to pick up OS default device changes (headphones connected after app start) |
 | JS runtime auto-detection in `_run_ytdlp` | `shutil.which` checks node/deno/phantomjs at download time; passes to yt-dlp if found to enable full format support |

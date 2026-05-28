@@ -73,7 +73,14 @@ const contextMenu = (() => {
       _el.appendChild(_sep());
       _el.appendChild(_item('Remove from library', async () => {
         if (await modal.confirm(`Remove "${track.title}" from library? The file will not be deleted.`, 'Remove track', 'Remove')) {
-          toast.show('Remove not yet implemented', 'warning', 3000);
+          try {
+            if (player.state.track?.id === track.id) await player.stop();
+            await api.remove_from_library(track.id);
+            document.dispatchEvent(new CustomEvent('library:changed'));
+            toast.show(`"${track.title}" removed from library`, 'success', 3000);
+          } catch (err) {
+            toast.show(`Failed to remove track: ${err.message}`, 'error', 4000);
+          }
         }
       }, 'danger'));
     }

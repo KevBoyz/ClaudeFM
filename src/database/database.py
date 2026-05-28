@@ -319,3 +319,8 @@ def remove_track_from_playlist(conn: sqlite3.Connection, playlist_id: int, track
         (playlist_id, track_id),
     )
     conn.commit()
+
+
+def delete_track(conn: sqlite3.Connection, track_id: int) -> None:
+    conn.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
+    conn.commit()

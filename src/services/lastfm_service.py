@@ -90,3 +90,18 @@ class LastFMService:
             ],
             "get_album_tracks",
         )
+
+    def get_cover_image_url(self, artist: str, album: str | None = None) -> str | None:
+        """Return extra-large cover image URL for an album or artist, or None on failure."""
+        if not self._api_key:
+            return None
+        try:
+            net = self._get_network()
+            if album:
+                url = net.get_album(artist, album).get_cover_image(pylast.SIZE_EXTRA_LARGE)
+            else:
+                url = net.get_artist(artist).get_cover_image(pylast.SIZE_EXTRA_LARGE)
+            return url or None
+        except Exception as e:
+            log.warning(f"get_cover_image_url {artist!r}/{album!r}: {e}")
+            return None
