@@ -51,3 +51,194 @@ def test_expired_cache_calls_api(db_conn):
         mock_net.return_value.search_for_artist.return_value.get_next_page.return_value = [mock_result]
         result = svc.search("radiohead", "artist")
     assert len(result) > 0
+
+
+# ── Cache internals ───────────────────────────────────────────────────────────
+
+def test_cache_key_normalizes_to_lowercase(db_conn):
+    svc = _make_service(db_conn)
+    key = svc._cache_key("Search", "ARTIST", "Radiohead")
+    assert key == "search:artist:radiohead"
+
+
+def test_cache_key_joins_parts_with_colon(db_conn):
+    svc = _make_service(db_conn)
+    assert svc._cache_key("a", "b", "c") == "a:b:c"
+
+
+def test_get_cache_returns_none_when_missing(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    assert svc._get_cache("nonexistent:key") is None
+
+
+def test_set_cache_and_get_cache_roundtrip(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    data = [{"type": "artist", "name": "Radiohead"}]
+    svc._set_cache("test:key", data)
+    result = svc._get_cache("test:key")
+    assert result == data
+
+
+def test_get_cache_deletes_expired_entry(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    expired = (datetime.now() - timedelta(days=1)).isoformat()
+    db_conn.execute(
+        "INSERT INTO cache (key, response, cached_at, expires_at) VALUES (?,?,?,?)",
+        ("old:key", json.dumps([{"x": 1}]), expired, expired),
+    )
+    db_conn.commit()
+    result = svc._get_cache("old:key")
+    assert result is None
+    row = db_conn.execute("SELECT key FROM cache WHERE key='old:key'").fetchone()
+    assert row is None
+
+
+def test_set_cache_upserts_existing_key(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    svc._set_cache("k", [{"v": 1}])
+    svc._set_cache("k", [{"v": 2}])
+    result = svc._get_cache("k")
+    assert result == [{"v": 2}]
+
+
+# ── Search with mocked network ────────────────────────────────────────────────
+
+def test_search_artists_returns_formatted_results(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    mock_artist = MagicMock()
+    mock_artist.get_name.return_value = "Radiohead"
+    mock_artist.get_mbid.return_value = "abc123"
+    with patch.object(svc, "_get_network") as mock_net:
+        mock_net.return_value.search_for_artist.return_value.get_next_page.return_value = [mock_artist]
+        result = svc.search("radiohead", "artist", limit=1)
+    assert len(result) == 1
+    assert result[0]["type"] == "artist"
+    assert result[0]["name"] == "Radiohead"
+    assert result[0]["mbid"] == "abc123"
+
+
+def test_search_tracks_returns_formatted_results(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    mock_track = MagicMock()
+    mock_track.get_name.return_value = "Creep"
+    mock_track.get_artist.return_value.get_name.return_value = "Radiohead"
+    mock_track.get_mbid.return_value = "xyz"
+    with patch.object(svc, "_get_network") as mock_net:
+        mock_net.return_value.search_for_track.return_value.get_next_page.return_value = [mock_track]
+        result = svc.search("creep", "track", limit=1)
+    assert result[0]["type"] == "track"
+    assert result[0]["title"] == "Creep"
+    assert result[0]["artist"] == "Radiohead"
+
+
+def test_search_albums_returns_formatted_results(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    mock_album = MagicMock()
+    mock_album.get_name.return_value = "OK Computer"
+    mock_album.get_artist.return_value.get_name.return_value = "Radiohead"
+    mock_album.get_mbid.return_value = "abc"
+    with patch.object(svc, "_get_network") as mock_net:
+        mock_net.return_value.search_for_album.return_value.get_next_page.return_value = [mock_album]
+        result = svc.search("ok computer", "album", limit=1)
+    assert result[0]["type"] == "album"
+    assert result[0]["title"] == "OK Computer"
+    assert result[0]["artist"] == "Radiohead"
+
+
+def test_search_caches_api_results(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    mock_artist = MagicMock()
+    mock_artist.get_name.return_value = "Radiohead"
+    mock_artist.get_mbid.return_value = "abc"
+    with patch.object(svc, "_get_network") as mock_net:
+        mock_net.return_value.search_for_artist.return_value.get_next_page.return_value = [mock_artist]
+        svc.search("radiohead", "artist")
+        svc.search("radiohead", "artist")  # second call should hit cache
+    assert mock_net.call_count == 1
+
+
+def test_search_api_exception_returns_empty_list(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    with patch.object(svc, "_get_network") as mock_net:
+        mock_net.return_value.search_for_artist.side_effect = Exception("Network error")
+        result = svc.search("anything", "artist")
+    assert result == []
+
+
+# ── get_artist_top_tracks ─────────────────────────────────────────────────────
+
+def test_get_artist_top_tracks_cache_hit(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    cached = [{"type": "track", "title": "Creep", "artist": "Radiohead"}]
+    svc._set_cache("top_tracks:radiohead", cached)
+    with patch.object(svc, "_get_network") as mock_net:
+        result = svc.get_artist_top_tracks("Radiohead")
+    mock_net.assert_not_called()
+    assert result == cached
+
+
+def test_get_artist_top_tracks_fetches_from_api(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    mock_item = MagicMock()
+    mock_item.item.get_name.return_value = "Creep"
+    with patch.object(svc, "_get_network") as mock_net:
+        mock_net.return_value.get_artist.return_value.get_top_tracks.return_value = [mock_item]
+        result = svc.get_artist_top_tracks("Radiohead", limit=1)
+    assert len(result) == 1
+    assert result[0]["title"] == "Creep"
+    assert result[0]["artist"] == "Radiohead"
+
+
+def test_get_artist_top_tracks_api_error_returns_empty(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    with patch.object(svc, "_get_network") as mock_net:
+        mock_net.return_value.get_artist.side_effect = Exception("API error")
+        result = svc.get_artist_top_tracks("Nobody")
+    assert result == []
+
+
+# ── get_album_tracks ──────────────────────────────────────────────────────────
+
+def test_get_album_tracks_cache_hit(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    cached = [{"type": "track", "title": "Creep", "artist": "Radiohead", "album": "Pablo Honey"}]
+    svc._set_cache("album_tracks:radiohead:pablo honey", cached)
+    with patch.object(svc, "_get_network") as mock_net:
+        result = svc.get_album_tracks("Pablo Honey", "Radiohead")
+    mock_net.assert_not_called()
+    assert result == cached
+
+
+def test_get_album_tracks_fetches_from_api(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    mock_track = MagicMock()
+    mock_track.get_name.return_value = "Creep"
+    with patch.object(svc, "_get_network") as mock_net:
+        mock_net.return_value.get_album.return_value.get_tracks.return_value = [mock_track]
+        result = svc.get_album_tracks("Pablo Honey", "Radiohead")
+    assert len(result) == 1
+    assert result[0]["title"] == "Creep"
+    assert result[0]["album"] == "Pablo Honey"
+
+
+def test_get_album_tracks_api_error_returns_empty(db_conn):
+    init_db(db_conn)
+    svc = _make_service(db_conn)
+    with patch.object(svc, "_get_network") as mock_net:
+        mock_net.return_value.get_album.side_effect = Exception("API error")
+        result = svc.get_album_tracks("Ghost Album", "Nobody")
+    assert result == []
