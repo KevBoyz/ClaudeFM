@@ -33,6 +33,10 @@ DEFAULTS: dict[str, str] = {  # fallback values used when a key is absent from t
     "auto_fetch_lyrics": "true",
     "auto_fetch_artwork": "true",
     "player_volume": "1.0",
+    "enrich_repeat_lyrics":        "false",
+    "enrich_repeat_artwork":       "false",
+    "enrich_interval_days":        "1",
+    "enrich_retry_not_found_days": "7",
 }
 
 

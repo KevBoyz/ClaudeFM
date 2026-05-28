@@ -8,9 +8,12 @@ from src.database.database import (
     insert_playlist, get_all_playlists, get_auto_playlist_count,
     delete_oldest_auto_playlist, get_playlist_tracks, delete_playlist,
     update_playlist_name, add_track_to_playlist, remove_track_from_playlist,
+    update_artwork_status, update_lyrics_fetched_at,
+    get_tracks_to_enrich_lyrics, get_tracks_to_enrich_artwork,
 )
 from src.models.track import Track
 from src.models.playlist import Playlist
+from datetime import datetime
 
 
 def test_init_creates_all_tables(db_conn):
@@ -290,3 +293,130 @@ def test_delete_track_cascades_to_playlist_tracks(db_conn):
     add_track_to_playlist(db_conn, pid, tid)
     delete_track(db_conn, tid)
     assert get_playlist_tracks(db_conn, pid) == []
+
+
+# ── update_lyrics_fetched_at ───────────────────────────────────────────────────
+
+def test_update_lyrics_fetched_at_writes_timestamp(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    ts = datetime(2025, 1, 15, 10, 0, 0)
+    update_lyrics_fetched_at(db_conn, tid, ts)
+    track = get_track(db_conn, tid)
+    assert track.lyrics_fetched_at == ts
+
+
+# ── update_artwork_status ──────────────────────────────────────────────────────
+
+def test_update_artwork_status_writes_status_and_timestamp(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    ts = datetime(2025, 1, 15, 10, 0, 0)
+    update_artwork_status(db_conn, tid, "embedded", ts)
+    track = get_track(db_conn, tid)
+    assert track.artwork_status == "embedded"
+    assert track.artwork_fetched_at == ts
+
+
+# ── get_tracks_to_enrich_lyrics ────────────────────────────────────────────────
+
+def test_get_tracks_to_enrich_lyrics_includes_not_fetched(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    assert any(t.id == tid for t in result)
+
+
+def test_get_tracks_to_enrich_lyrics_excludes_synchronized(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    update_lyrics_status(db_conn, tid, "synchronized")
+    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    assert not any(t.id == tid for t in result)
+
+
+def test_get_tracks_to_enrich_lyrics_excludes_not_downloaded(db_conn):
+    init_db(db_conn)
+    insert_track(db_conn, Track(title="A", artist="X"))  # download_status = pending
+    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    assert result == []
+
+
+def test_get_tracks_to_enrich_lyrics_retries_not_found_after_cooldown(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    update_lyrics_status(db_conn, tid, "not_found")
+    db_conn.execute(
+        "UPDATE tracks SET lyrics_fetched_at=datetime('now','-8 days') WHERE id=?", (tid,)
+    )
+    db_conn.commit()
+    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    assert any(t.id == tid for t in result)
+
+
+def test_get_tracks_to_enrich_lyrics_skips_not_found_within_cooldown(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    update_lyrics_status(db_conn, tid, "not_found")
+    db_conn.execute(
+        "UPDATE tracks SET lyrics_fetched_at=datetime('now','-3 days') WHERE id=?", (tid,)
+    )
+    db_conn.commit()
+    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    assert not any(t.id == tid for t in result)
+
+
+# ── get_tracks_to_enrich_artwork ───────────────────────────────────────────────
+
+def test_get_tracks_to_enrich_artwork_includes_not_fetched(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    assert any(t.id == tid for t in result)
+
+
+def test_get_tracks_to_enrich_artwork_excludes_embedded(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    update_artwork_status(db_conn, tid, "embedded", datetime(2025, 1, 1))
+    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    assert not any(t.id == tid for t in result)
+
+
+def test_get_tracks_to_enrich_artwork_excludes_not_downloaded(db_conn):
+    init_db(db_conn)
+    insert_track(db_conn, Track(title="A", artist="X"))
+    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    assert result == []
+
+
+def test_get_tracks_to_enrich_artwork_retries_not_found_after_cooldown(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    update_artwork_status(db_conn, tid, "not_found", datetime(2025, 1, 1))
+    db_conn.execute(
+        "UPDATE tracks SET artwork_fetched_at=datetime('now','-8 days') WHERE id=?", (tid,)
+    )
+    db_conn.commit()
+    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    assert any(t.id == tid for t in result)
+
+
+def test_get_tracks_to_enrich_artwork_skips_not_found_within_cooldown(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    update_artwork_status(db_conn, tid, "not_found", datetime(2025, 1, 1))
+    db_conn.execute(
+        "UPDATE tracks SET artwork_fetched_at=datetime('now','-3 days') WHERE id=?", (tid,)
+    )
+    db_conn.commit()
+    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    assert not any(t.id == tid for t in result)

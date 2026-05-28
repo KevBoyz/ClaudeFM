@@ -29,6 +29,14 @@ class LyricsStatus(str, Enum):
     NOT_SUPPORTED = "not_supported"
 
 
+class ArtworkStatus(str, Enum):
+    """Result of a cover art fetch attempt for a track."""
+
+    NOT_FETCHED = "not_fetched"
+    EMBEDDED = "embedded"
+    NOT_FOUND = "not_found"
+
+
 class PlaylistType(str, Enum):
     """Whether a playlist was created by the user or auto-generated (e.g. from Last.fm)."""
 

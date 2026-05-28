@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import datetime
 from pydantic import BaseModel, Field
-from src.models.enums import DownloadStatus, FileStatus, LyricsStatus
+from src.models.enums import DownloadStatus, FileStatus, LyricsStatus, ArtworkStatus
 
 
 class Track(BaseModel):
@@ -25,3 +25,6 @@ class Track(BaseModel):
     download_error: str | None = None
     file_status: FileStatus = FileStatus.AVAILABLE
     lyrics_status: LyricsStatus = LyricsStatus.NOT_FETCHED
+    artwork_status: ArtworkStatus = ArtworkStatus.NOT_FETCHED
+    lyrics_fetched_at: datetime | None = None
+    artwork_fetched_at: datetime | None = None

@@ -44,7 +44,10 @@ def init_db(conn: sqlite3.Connection) -> None:
             download_status TEXT NOT NULL DEFAULT 'pending',
             download_error  TEXT,
             file_status     TEXT NOT NULL DEFAULT 'available',
-            lyrics_status   TEXT NOT NULL DEFAULT 'not_fetched'
+            lyrics_status   TEXT NOT NULL DEFAULT 'not_fetched',
+            artwork_status   TEXT NOT NULL DEFAULT 'not_fetched',
+            lyrics_fetched_at  TEXT,
+            artwork_fetched_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS playlists (
@@ -78,10 +81,24 @@ def init_db(conn: sqlite3.Connection) -> None:
     """)
     conn.commit()
 
+    # Migrate existing databases that predate these columns.
+    for col_def in [
+        "artwork_status    TEXT NOT NULL DEFAULT 'not_fetched'",
+        "lyrics_fetched_at  TEXT",
+        "artwork_fetched_at TEXT",
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE tracks ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    conn.commit()
+
 
 def _row_to_track(row: sqlite3.Row) -> Track:
-    """Convert a raw DB row to a Track, parsing the ISO datetime string for ``date_downloaded``."""
+    """Convert a raw DB row to a Track, parsing ISO datetime strings for timestamp fields."""
     date_dl = row["date_downloaded"]
+    lfa = row["lyrics_fetched_at"]
+    afa = row["artwork_fetched_at"]
     return Track(
         id=row["id"],
         title=row["title"],
@@ -96,6 +113,9 @@ def _row_to_track(row: sqlite3.Row) -> Track:
         download_error=row["download_error"],
         file_status=row["file_status"],
         lyrics_status=row["lyrics_status"],
+        artwork_status=row["artwork_status"],
+        lyrics_fetched_at=datetime.fromisoformat(lfa) if lfa else None,
+        artwork_fetched_at=datetime.fromisoformat(afa) if afa else None,
     )
 
 
@@ -169,6 +189,68 @@ def update_lyrics_status(conn: sqlite3.Connection, track_id: int, status: str) -
     conn.execute("UPDATE tracks SET lyrics_status=? WHERE id=?",
                  (status, track_id))
     conn.commit()
+
+
+def update_lyrics_fetched_at(conn: sqlite3.Connection, track_id: int, fetched_at: datetime) -> None:
+    conn.execute(
+        "UPDATE tracks SET lyrics_fetched_at=? WHERE id=?",
+        (fetched_at.isoformat(), track_id),
+    )
+    conn.commit()
+
+
+def update_artwork_status(
+    conn: sqlite3.Connection, track_id: int, status: str, fetched_at: datetime
+) -> None:
+    conn.execute(
+        "UPDATE tracks SET artwork_status=?, artwork_fetched_at=? WHERE id=?",
+        (status, fetched_at.isoformat(), track_id),
+    )
+    conn.commit()
+
+
+def get_tracks_to_enrich_lyrics(
+    conn: sqlite3.Connection, retry_not_found_after_days: int
+) -> list[Track]:
+    rows = conn.execute(
+        """SELECT * FROM tracks
+           WHERE download_status = 'completed'
+             AND file_status = 'available'
+             AND (
+               lyrics_status = 'not_fetched'
+               OR (
+                 lyrics_status = 'not_found'
+                 AND (
+                   lyrics_fetched_at IS NULL
+                   OR datetime(lyrics_fetched_at) < datetime('now', ? || ' days')
+                 )
+               )
+             )""",
+        (f"-{retry_not_found_after_days}",),
+    ).fetchall()
+    return [_row_to_track(r) for r in rows]
+
+
+def get_tracks_to_enrich_artwork(
+    conn: sqlite3.Connection, retry_not_found_after_days: int
+) -> list[Track]:
+    rows = conn.execute(
+        """SELECT * FROM tracks
+           WHERE download_status = 'completed'
+             AND file_status = 'available'
+             AND (
+               artwork_status = 'not_fetched'
+               OR (
+                 artwork_status = 'not_found'
+                 AND (
+                   artwork_fetched_at IS NULL
+                   OR datetime(artwork_fetched_at) < datetime('now', ? || ' days')
+                 )
+               )
+             )""",
+        (f"-{retry_not_found_after_days}",),
+    ).fetchall()
+    return [_row_to_track(r) for r in rows]
 
 
 def get_tracks_without_lyrics(conn: sqlite3.Connection) -> list[Track]:
