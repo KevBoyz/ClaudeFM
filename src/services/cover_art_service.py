@@ -21,7 +21,6 @@ class CoverArtEmbedder:
             audio = MP4(file_path)
             if audio.tags is None:
                 audio.add_tags()
-                audio.tags = {}
             audio.tags['covr'] = [MP4Cover(image_data, imageformat=MP4Cover.FORMAT_JPEG)]
             audio.save()
         elif ext == '.mp3':

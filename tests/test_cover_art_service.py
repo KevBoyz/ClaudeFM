@@ -24,6 +24,11 @@ def test_embed_m4a_adds_tags_when_none(mocker):
     mocker.patch('src.services.cover_art_service.MP4Cover')
     mock_audio = MagicMock()
     mock_audio.tags = None
+
+    def _set_tags():
+        mock_audio.tags = {}
+    mock_audio.add_tags.side_effect = _set_tags
+
     mock_mp4_cls.return_value = mock_audio
 
     CoverArtEmbedder().embed('/music/song.m4a', b'img')
