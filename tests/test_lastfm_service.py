@@ -57,27 +57,27 @@ def test_expired_cache_calls_api(db_conn):
 
 def test_cache_key_normalizes_to_lowercase(db_conn):
     svc = _make_service(db_conn)
-    key = svc._cache_key("Search", "ARTIST", "Radiohead")
+    key = svc._cache.key("Search", "ARTIST", "Radiohead")
     assert key == "search:artist:radiohead"
 
 
 def test_cache_key_joins_parts_with_colon(db_conn):
     svc = _make_service(db_conn)
-    assert svc._cache_key("a", "b", "c") == "a:b:c"
+    assert svc._cache.key("a", "b", "c") == "a:b:c"
 
 
 def test_get_cache_returns_none_when_missing(db_conn):
     init_db(db_conn)
     svc = _make_service(db_conn)
-    assert svc._get_cache("nonexistent:key") is None
+    assert svc._cache.get("nonexistent:key") is None
 
 
 def test_set_cache_and_get_cache_roundtrip(db_conn):
     init_db(db_conn)
     svc = _make_service(db_conn)
     data = [{"type": "artist", "name": "Radiohead"}]
-    svc._set_cache("test:key", data)
-    result = svc._get_cache("test:key")
+    svc._cache.set("test:key", data)
+    result = svc._cache.get("test:key")
     assert result == data
 
 
@@ -90,7 +90,7 @@ def test_get_cache_deletes_expired_entry(db_conn):
         ("old:key", json.dumps([{"x": 1}]), expired, expired),
     )
     db_conn.commit()
-    result = svc._get_cache("old:key")
+    result = svc._cache.get("old:key")
     assert result is None
     row = db_conn.execute("SELECT key FROM cache WHERE key='old:key'").fetchone()
     assert row is None
@@ -99,9 +99,9 @@ def test_get_cache_deletes_expired_entry(db_conn):
 def test_set_cache_upserts_existing_key(db_conn):
     init_db(db_conn)
     svc = _make_service(db_conn)
-    svc._set_cache("k", [{"v": 1}])
-    svc._set_cache("k", [{"v": 2}])
-    result = svc._get_cache("k")
+    svc._cache.set("k", [{"v": 1}])
+    svc._cache.set("k", [{"v": 2}])
+    result = svc._cache.get("k")
     assert result == [{"v": 2}]
 
 
@@ -180,7 +180,7 @@ def test_get_artist_top_tracks_cache_hit(db_conn):
     init_db(db_conn)
     svc = _make_service(db_conn)
     cached = [{"type": "track", "title": "Creep", "artist": "Radiohead"}]
-    svc._set_cache("top_tracks:radiohead", cached)
+    svc._cache.set("top_tracks:radiohead", cached)
     with patch.object(svc, "_get_network") as mock_net:
         result = svc.get_artist_top_tracks("Radiohead")
     mock_net.assert_not_called()
@@ -215,7 +215,7 @@ def test_get_album_tracks_cache_hit(db_conn):
     init_db(db_conn)
     svc = _make_service(db_conn)
     cached = [{"type": "track", "title": "Creep", "artist": "Radiohead", "album": "Pablo Honey"}]
-    svc._set_cache("album_tracks:radiohead:pablo honey", cached)
+    svc._cache.set("album_tracks:radiohead:pablo honey", cached)
     with patch.object(svc, "_get_network") as mock_net:
         result = svc.get_album_tracks("Pablo Honey", "Radiohead")
     mock_net.assert_not_called()
