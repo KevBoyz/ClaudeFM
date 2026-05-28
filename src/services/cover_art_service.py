@@ -47,4 +47,37 @@ class CoverArtFetcher:
 
 
 class CoverArtService:
-    pass  # filled in later task
+    """Fetch a cover image URL from Last.fm, download the bytes, and embed into the audio file."""
+
+    def __init__(self, conn: sqlite3.Connection, lastfm_service) -> None:
+        self._conn = conn
+        self._lastfm = lastfm_service
+        self._fetcher = CoverArtFetcher()
+        self._embedder = CoverArtEmbedder()
+
+    def fetch_and_embed(self, track_id: int) -> bool:
+        track = get_track(self._conn, track_id)
+        if not track or not track.file_path:
+            return False
+
+        url = self._lastfm.get_cover_image_url(track.artist, track.album)
+        if not url:
+            log.debug(f"No cover art URL for track {track_id} ({track.artist!r}/{track.album!r})")
+            return False
+
+        try:
+            image_data = self._fetcher.fetch_bytes(url)
+        except Exception as e:
+            log.warning(f"Failed to download cover art for track {track_id}: {e}")
+            return False
+
+        try:
+            self._embedder.embed(track.file_path, image_data)
+        except Exception as e:
+            log.warning(f"Failed to embed cover art for track {track_id}: {e}")
+            return False
+
+        return True
+
+    def fetch_and_embed_async(self, track_id: int) -> None:
+        threading.Thread(target=self.fetch_and_embed, args=(track_id,), daemon=True).start()
