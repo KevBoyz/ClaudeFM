@@ -1,8 +1,10 @@
 # tests/test_lrclib_service.py
 import threading
 import pytest
+from datetime import datetime
 from unittest.mock import patch, MagicMock
-from src.database.database import init_db, insert_track, get_track, update_lyrics_status
+from src.database.database import init_db, insert_track, get_track, update_lyrics_status, update_track_status
+from src.models.enums import LyricsStatus
 from src.models.track import Track
 from src.services.lrclib_service import LRCLibService
 
@@ -10,7 +12,8 @@ from src.services.lrclib_service import LRCLibService
 def _make_track(db_conn, **kwargs):
     defaults = dict(
         title="Creep", artist="Radiohead", album="Pablo Honey",
-        duration=238, file_path="/tmp/creep.m4a"
+        duration=238, file_path="/tmp/creep.m4a",
+        download_status="completed", file_status="available",
     )
     defaults.update(kwargs)
     return insert_track(db_conn, Track(**defaults))
@@ -268,7 +271,7 @@ def test_fetch_missing_runs_in_background(db_conn):
     svc = LRCLibService(db_conn)
     called = threading.Event()
 
-    def fake_batch():
+    def fake_batch(*args, **kwargs):
         called.set()
 
     with patch.object(svc, "_run_batch", side_effect=fake_batch):
@@ -283,7 +286,7 @@ def test_fetch_missing_second_call_ignored_while_running(db_conn):
     call_count = 0
     blocker = threading.Event()
 
-    def slow_batch():
+    def slow_batch(*args, **kwargs):
         nonlocal call_count
         call_count += 1
         blocker.wait(timeout=2)
@@ -448,3 +451,83 @@ def test_get_lyrics_file_error_returns_none(db_conn):
         result = svc.get_lyrics(track_id)
 
     assert result is None
+
+
+def test_fetch_and_embed_writes_lyrics_fetched_at_on_not_found(db_conn, mocker):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed",
+                        file_path="/fake/a.m4a", file_status="available")
+
+    svc = LRCLibService(db_conn)
+    svc._fetcher = mocker.Mock()
+    svc._fetcher.get.return_value = None
+    svc._fetcher.search.return_value = None
+
+    svc.fetch_and_embed(tid)
+
+    track = get_track(db_conn, tid)
+    assert track.lyrics_fetched_at is not None
+
+
+def test_fetch_and_embed_writes_lyrics_fetched_at_on_found(db_conn, mocker):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X", duration=200))
+    update_track_status(db_conn, tid, download_status="completed",
+                        file_path="/fake/a.m4a", file_status="available")
+
+    result_mock = mocker.Mock()
+    result_mock.instrumental = False
+    result_mock.syncedLyrics = None
+    result_mock.plainLyrics = "Some lyrics"
+
+    svc = LRCLibService(db_conn)
+    svc._fetcher = mocker.Mock()
+    svc._fetcher.get.return_value = result_mock
+    svc._embedder = mocker.Mock()
+
+    svc.fetch_and_embed(tid)
+
+    track = get_track(db_conn, tid)
+    assert track.lyrics_fetched_at is not None
+
+
+def test_fetch_missing_lyrics_uses_retry_not_found_query(db_conn, mocker):
+    init_db(db_conn)
+
+    mock_query = mocker.patch(
+        "src.services.lrclib_service.get_tracks_to_enrich_lyrics",
+        return_value=[],
+    )
+
+    svc = LRCLibService(db_conn)
+    # Call _run_batch directly to avoid threading in tests
+    svc._run_batch(retry_not_found_after_days=14)
+
+    mock_query.assert_called_once_with(db_conn, retry_not_found_after_days=14)
+
+
+def test_run_batch_emits_enrichment_lyrics_started(db_conn, mocker):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed",
+                        file_path="/fake/a.m4a", file_status="available")
+
+    emitted = []
+    mocker.patch(
+        "src.services.lrclib_service.event_bus.emit",
+        side_effect=lambda t, p: emitted.append((t, p)),
+    )
+
+    svc = LRCLibService(db_conn)
+    svc._fetcher = mocker.Mock()
+    svc._fetcher.get.return_value = None
+    svc._fetcher.search.return_value = None
+    svc._embedder = mocker.Mock()
+
+    svc._run_batch(retry_not_found_after_days=7)
+
+    types = [e[0] for e in emitted]
+    assert "enrichment_lyrics_started" in types
+    started = next(e[1] for e in emitted if e[0] == "enrichment_lyrics_started")
+    assert started["total"] == 1
