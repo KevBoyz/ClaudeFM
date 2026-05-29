@@ -570,3 +570,30 @@ def test_check_lastfm_connection_failure(db_conn, tmp_path):
         MockLFM.return_value.search.side_effect = Exception("Network error")
         result = json.loads(api.check_lastfm_connection())
     assert result["success"] is False
+
+
+# ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+def test_persist_state_writes_current_track_id_and_position(db_conn, tmp_path):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X", file_path="/a.m4a"))
+    api = _make_api(db_conn, tmp_path)
+    api._player.queue.set_context([tid], start_index=0)
+    api.persist_state()
+    from src.database.config_manager import get_setting
+    assert get_setting(db_conn, "player_last_track_id") == str(tid)
+    assert get_setting(db_conn, "player_last_position") == "0"
+
+
+def test_persist_state_noop_when_queue_empty(db_conn, tmp_path):
+    init_db(db_conn)
+    api = _make_api(db_conn, tmp_path)
+    api.persist_state()  # must not raise
+
+
+def test_shutdown_persists_then_shuts_down_youtube(db_conn, tmp_path):
+    init_db(db_conn)
+    api = _make_api(db_conn, tmp_path)
+    api._youtube = MagicMock()
+    api.shutdown()
+    api._youtube.shutdown.assert_called_once_with(wait=False)

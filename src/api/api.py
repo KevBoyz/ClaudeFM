@@ -129,6 +129,25 @@ class ClaudeFMAPI:
                 h(track_id)
         return combined
 
+    def persist_state(self) -> None:
+        """Write the current playback state to settings so the next session can restore it."""
+        q = self._player.queue
+        track_id = q.current_id()
+        if track_id is None:
+            return
+        set_setting(self._conn, "player_last_track_id", str(track_id))
+        set_setting(self._conn, "player_last_position", str(int(self._player.get_position())))
+        set_setting(self._conn, "player_last_context", json.dumps(q.to_dict()))
+
+    def shutdown(self) -> None:
+        """Persist player state and tear down background workers. Idempotent."""
+        self.persist_state()
+        if self._youtube is not None:
+            self._youtube.shutdown(wait=False)
+        if self._enrichment is not None:
+            self._enrichment.shutdown()
+        self._conn.close()
+
     # ── Library ──────────────────────────────────────────────────────────────
 
     @_api_method(raw=True)

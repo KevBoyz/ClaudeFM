@@ -71,17 +71,8 @@ def main():
             start_background_scan(conn, folders)
 
     def on_closing():
-        """Persist playback state and shut down the download executor before the window closes."""
-        q = api._player.queue
-        track_id = q.current_id()
-        position = api._player.get_position()
-        if track_id:
-            set_setting(conn, "player_last_track_id", str(track_id))
-            set_setting(conn, "player_last_position", str(int(position)))
-            set_setting(conn, "player_last_context", json.dumps(q.to_dict()))
-        if api._youtube is not None:
-            api._youtube.shutdown(wait=False)
-        conn.close()
+        """Persist playback state and shut down workers before the window closes."""
+        api.shutdown()
         log.info("ClaudeFM closing")
 
     window.events.loaded += on_loaded
