@@ -79,6 +79,7 @@ const playlistDetailPage = (() => {
           title="Remove">×</button></div>`
       );
     }).join('');
+    loadArtwork(list);
 
     list.addEventListener('click', async e => {
       const btn = e.target.closest('[data-playlist-id]');

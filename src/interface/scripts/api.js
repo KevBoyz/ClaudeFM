@@ -89,6 +89,7 @@ const api = (() => {
     get_lyrics:             (id)  => _call('get_lyrics', id),
     run_enrichment_lyrics:  ()    => _call('run_enrichment_lyrics'),
     run_enrichment_artwork: ()    => _call('run_enrichment_artwork'),
+    get_track_artwork:      (id)  => _call('get_track_artwork', id),
 
     // Settings
     get_settings:             ()         => _call('get_settings'),

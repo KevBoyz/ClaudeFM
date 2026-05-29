@@ -55,7 +55,7 @@ function trackCard(track) {
 
   return `<div class="track-card${playing ? ' playing' : ''}" data-track-id="${track.id}"
       onclick="player.play(${track.id}, _pageQueue)">
-    <div class="track-card-thumb">♪</div>
+    <div class="track-card-thumb"${track.artwork_status === 'embedded' ? ` data-artwork="${track.id}"` : ''}>♪</div>
     <div class="track-card-info">
       <div class="track-card-title">${track.title}</div>
       <div class="track-card-sub">${track.artist}${track.album ? ' · ' + track.album : ''}</div>
@@ -66,6 +66,20 @@ function trackCard(track) {
       ${action}
     </div>
   </div>`;
+}
+
+async function loadArtwork(container) {
+  const thumbs = (container || document).querySelectorAll('.track-card-thumb[data-artwork]');
+  for (const thumb of thumbs) {
+    const trackId = parseInt(thumb.dataset.artwork);
+    delete thumb.dataset.artwork;  // prevent double-load on re-renders
+    try {
+      const result = await api.get_track_artwork(trackId);
+      if (result?.data?.data_url) {
+        thumb.innerHTML = `<img src="${result.data.data_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:4px">`;
+      }
+    } catch (_) {}
+  }
 }
 
 function startLibraryDownload(btn, trackId) {

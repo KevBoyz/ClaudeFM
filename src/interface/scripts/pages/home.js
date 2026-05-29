@@ -65,6 +65,7 @@ const homePage = (() => {
     }
     setPageQueue(_tracks.map(t => t.id));
     list.innerHTML = _tracks.map(t => trackCard(t)).join('');
+    loadArtwork(list);
   }
 
   function _onScan(e) {

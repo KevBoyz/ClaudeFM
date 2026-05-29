@@ -35,6 +35,25 @@ class CoverArtEmbedder:
         else:
             raise ValueError(f"Unsupported format: {ext}")
 
+    def read_bytes(self, file_path: str) -> bytes | None:
+        ext = Path(file_path).suffix.lower()
+        try:
+            if ext == '.m4a':
+                audio = MP4(file_path)
+                if audio.tags and 'covr' in audio.tags:
+                    return bytes(audio.tags['covr'][0])
+            elif ext == '.mp3':
+                try:
+                    audio = ID3(file_path)
+                except ID3NoHeaderError:
+                    return None
+                for tag in audio.values():
+                    if isinstance(tag, APIC):
+                        return tag.data
+        except Exception as e:
+            log.debug(f"read_bytes failed for {file_path}: {e}")
+        return None
+
 
 class CoverArtFetcher:
     """Download raw image bytes from a URL."""
@@ -87,3 +106,9 @@ class CoverArtService:
 
     def fetch_and_embed_async(self, track_id: int) -> None:
         threading.Thread(target=self.fetch_and_embed, args=(track_id,), daemon=True).start()
+
+    def get_cover_bytes(self, track_id: int) -> bytes | None:
+        track = get_track(self._conn, track_id)
+        if not track or not track.file_path:
+            return None
+        return self._embedder.read_bytes(track.file_path)

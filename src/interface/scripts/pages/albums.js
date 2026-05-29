@@ -90,6 +90,7 @@ const albumsPage = (() => {
     }
     setPageQueue(tracks.map(t => t.id));
     list.innerHTML = tracks.map(t => trackCard(t)).join('');
+    loadArtwork(list);
   }
 
   function destroy() {}

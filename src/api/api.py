@@ -1,3 +1,4 @@
+import base64
 import json
 import socket
 import sqlite3
@@ -423,6 +424,17 @@ class ClaudeFMAPI:
             return _ok()
         except Exception as e:
             log.error(f"run_enrichment_artwork: {e}", exc_info=True)
+            return _err(str(e))
+
+    def get_track_artwork(self, track_id: int) -> str:
+        try:
+            image_bytes = self._get_cover_art().get_cover_bytes(track_id)
+            if not image_bytes:
+                return _err("No artwork")
+            data_url = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode()
+            return _ok({"data_url": data_url})
+        except Exception as e:
+            log.error(f"get_track_artwork: {e}", exc_info=True)
             return _err(str(e))
 
     def add_to_playlist(self, playlist_id: int, track_id: int) -> str:
