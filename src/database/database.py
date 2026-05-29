@@ -95,28 +95,8 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 
 def _row_to_track(row: sqlite3.Row) -> Track:
-    """Convert a raw DB row to a Track, parsing ISO datetime strings for timestamp fields."""
-    date_dl = row["date_downloaded"]
-    lfa = row["lyrics_fetched_at"]
-    afa = row["artwork_fetched_at"]
-    return Track(
-        id=row["id"],
-        title=row["title"],
-        artist=row["artist"],
-        album=row["album"],
-        duration=row["duration"],
-        file_path=row["file_path"],
-        audio_format=row["audio_format"],
-        youtube_url=row["youtube_url"],
-        date_downloaded=datetime.fromisoformat(date_dl) if date_dl else None,
-        download_status=row["download_status"],
-        download_error=row["download_error"],
-        file_status=row["file_status"],
-        lyrics_status=row["lyrics_status"],
-        artwork_status=row["artwork_status"],
-        lyrics_fetched_at=datetime.fromisoformat(lfa) if lfa else None,
-        artwork_fetched_at=datetime.fromisoformat(afa) if afa else None,
-    )
+    """Convert a raw DB row to a Track. Pydantic parses ISO datetime strings natively."""
+    return Track.model_validate(dict(row))
 
 
 def insert_track(conn: sqlite3.Connection, track: Track) -> int:

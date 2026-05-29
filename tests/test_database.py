@@ -420,3 +420,22 @@ def test_get_tracks_to_enrich_artwork_skips_not_found_within_cooldown(db_conn):
     db_conn.commit()
     result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
     assert not any(t.id == tid for t in result)
+
+
+# ── _row_to_track datetime parsing ─────────────────────────────────────────────
+
+def test_row_to_track_parses_all_datetime_fields(db_conn):
+    """Use raw SQL for setup so the test survives a later task that removes update_lyrics_fetched_at / update_artwork_status."""
+    init_db(db_conn)
+    ts_iso = "2025-06-01T12:00:00"
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    db_conn.execute(
+        "UPDATE tracks SET date_downloaded=?, lyrics_fetched_at=?, artwork_fetched_at=?, artwork_status='embedded' WHERE id=?",
+        (ts_iso, ts_iso, ts_iso, tid),
+    )
+    db_conn.commit()
+    t = get_track(db_conn, tid)
+    expected = datetime.fromisoformat(ts_iso)
+    assert t.date_downloaded == expected
+    assert t.lyrics_fetched_at == expected
+    assert t.artwork_fetched_at == expected
