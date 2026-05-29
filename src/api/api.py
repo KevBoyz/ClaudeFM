@@ -2,6 +2,7 @@ import base64
 import json
 import socket
 import sqlite3
+from functools import wraps
 from src.database.database import (
     get_all_tracks, get_track, insert_track, update_track_status, delete_track,
     get_tracks_by_artist, get_tracks_by_album, search_tracks_local,
@@ -34,6 +35,34 @@ def _ok(data=None) -> str:
 
 def _err(message: str) -> str:
     return json.dumps({"success": False, "error": message})
+
+
+def _api_method(_fn=None, *, raw: bool = False):
+    """Wrap a JS-callable method so its body can raise/return naturally.
+
+    - body returns ``None`` -> ``_ok()``
+    - body returns any other value -> ``_ok(value)`` (or ``json.dumps(value)`` if ``raw``)
+    - body raises ``ValueError`` -> ``_err(str(e))`` (not logged at ERROR)
+    - body raises anything else -> ``_err(str(e))`` + ``log.error(..., exc_info=True)``
+    """
+    def decorate(fn):
+        @wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            try:
+                value = fn(self, *args, **kwargs)
+            except ValueError as e:
+                return _err(str(e))
+            except Exception as e:
+                log.error(f"{fn.__name__}: {e}", exc_info=True)
+                return _err(str(e))
+            if raw:
+                return json.dumps(value)
+            if value is None:
+                return _ok()
+            return _ok(value)
+        return wrapper
+
+    return decorate if _fn is None else decorate(_fn)
 
 
 class ClaudeFMAPI:
@@ -102,125 +131,87 @@ class ClaudeFMAPI:
 
     # ── Library ──────────────────────────────────────────────────────────────
 
+    @_api_method(raw=True)
     def get_library(self, filters_json: str = "{}") -> str:
         """Return all tracks as a JSON array, optionally filtered/sorted via ``filters_json``.
 
         ``filters_json`` may contain ``order_by`` and ``audio_format`` keys.
         Returns a raw array (no ``success`` wrapper) on success, ``_err`` on failure.
         """
-        try:
-            filters = json.loads(filters_json)
-            order = filters.get("order_by", "date_downloaded DESC")
-            fmt = filters.get("audio_format")
-            tracks = get_all_tracks(
-                self._conn, order_by=order, audio_format=fmt)
-            return json.dumps([t.model_dump(mode="json") for t in tracks])
-        except Exception as e:
-            log.error(f"get_library: {e}", exc_info=True)
-            return _err(str(e))
+        filters = json.loads(filters_json)
+        order = filters.get("order_by", "date_downloaded DESC")
+        fmt = filters.get("audio_format")
+        tracks = get_all_tracks(self._conn, order_by=order, audio_format=fmt)
+        return [t.model_dump(mode="json") for t in tracks]
 
+    @_api_method
     def get_track(self, track_id: int) -> str:
-        try:
-            track = get_track(self._conn, track_id)
-            if not track:
-                return _err("Track not found")
-            return _ok(track.model_dump(mode="json"))
-        except Exception as e:
-            return _err(str(e))
+        track = get_track(self._conn, track_id)
+        if not track:
+            raise ValueError("Track not found")
+        return track.model_dump(mode="json")
 
+    @_api_method(raw=True)
     def get_artists(self) -> str:
-        try:
-            return json.dumps(get_all_artists(self._conn))
-        except Exception as e:
-            return _err(str(e))
+        return get_all_artists(self._conn)
 
+    @_api_method(raw=True)
     def get_albums(self) -> str:
-        try:
-            return json.dumps(get_all_albums(self._conn))
-        except Exception as e:
-            return _err(str(e))
+        return get_all_albums(self._conn)
 
+    @_api_method(raw=True)
     def get_tracks_by_artist(self, artist: str) -> str:
-        try:
-            tracks = get_tracks_by_artist(self._conn, artist)
-            return json.dumps([t.model_dump(mode="json") for t in tracks])
-        except Exception as e:
-            return _err(str(e))
+        return [t.model_dump(mode="json") for t in get_tracks_by_artist(self._conn, artist)]
 
+    @_api_method(raw=True)
     def get_tracks_by_album(self, album: str, artist: str) -> str:
-        try:
-            tracks = get_tracks_by_album(self._conn, album, artist)
-            return json.dumps([t.model_dump(mode="json") for t in tracks])
-        except Exception as e:
-            return _err(str(e))
+        return [t.model_dump(mode="json") for t in get_tracks_by_album(self._conn, album, artist)]
 
+    @_api_method(raw=True)
     def search_local(self, query: str, limit: int | None = None) -> str:
-        try:
-            lim = limit or int(get_setting(self._conn, "search_results_limit"))
-            tracks = search_tracks_local(self._conn, query, limit=lim)
-            return json.dumps([t.model_dump(mode="json") for t in tracks])
-        except Exception as e:
-            return _err(str(e))
+        lim = limit or int(get_setting(self._conn, "search_results_limit"))
+        return [t.model_dump(mode="json") for t in search_tracks_local(self._conn, query, limit=lim)]
 
     # ── Last.fm ───────────────────────────────────────────────────────────────
 
+    @_api_method(raw=True)
     def search_lastfm(self, query: str, search_type: str) -> str:
-        try:
-            limit = int(get_setting(self._conn, "search_results_limit"))
-            results = self._get_lastfm().search(query, search_type, limit=limit)
-            return json.dumps(results)
-        except Exception as e:
-            log.error(f"search_lastfm: {e}", exc_info=True)
-            return _err(str(e))
+        limit = int(get_setting(self._conn, "search_results_limit"))
+        return self._get_lastfm().search(query, search_type, limit=limit)
 
+    @_api_method(raw=True)
     def get_artist_top_tracks(self, artist_name: str) -> str:
-        try:
-            tracks = self._get_lastfm().get_artist_top_tracks(artist_name)
-            return json.dumps(tracks)
-        except Exception as e:
-            return _err(str(e))
+        return self._get_lastfm().get_artist_top_tracks(artist_name)
 
+    @_api_method(raw=True)
     def get_album_tracks(self, album_title: str, artist_name: str) -> str:
-        try:
-            tracks = self._get_lastfm().get_album_tracks(album_title, artist_name)
-            return json.dumps(tracks)
-        except Exception as e:
-            return _err(str(e))
+        return self._get_lastfm().get_album_tracks(album_title, artist_name)
 
+    @_api_method
     def remove_from_library(self, track_id: int) -> str:
-        try:
-            delete_track(self._conn, track_id)
-            return _ok()
-        except Exception as e:
-            log.error(f"remove_from_library: {e}", exc_info=True)
-            return _err(str(e))
+        delete_track(self._conn, track_id)
 
     # ── Downloads ─────────────────────────────────────────────────────────────
 
+    @_api_method
     def queue_download(self, track_id: int) -> str:
-        try:
-            self._get_youtube().queue_download(track_id, on_complete=self._post_download_hook())
-            return _ok()
-        except Exception as e:
-            log.error(f"queue_download: {e}", exc_info=True)
-            return _err(str(e))
+        self._get_youtube().queue_download(track_id, on_complete=self._post_download_hook())
 
+    @_api_method(raw=True)
     def download_lastfm_track(self, title: str, artist: str, album: str | None = None) -> str:
         """Insert a track stub from Last.fm metadata and immediately queue a download.
 
         The returned payload includes ``track_id`` so the frontend can track
         download progress events without a separate lookup.
         """
-        try:
-            t = Track(title=title, artist=artist, album=album)
-            track_id = insert_track(self._conn, t)
-            self._get_youtube().queue_download(track_id, on_complete=self._post_download_hook())
-            return json.dumps({"success": True, "track_id": track_id})
-        except Exception as e:
-            return _err(str(e))
+        t = Track(title=title, artist=artist, album=album)
+        track_id = insert_track(self._conn, t)
+        self._get_youtube().queue_download(track_id, on_complete=self._post_download_hook())
+        return {"success": True, "track_id": track_id}
 
     # ── Playback ──────────────────────────────────────────────────────────────
 
+    @_api_method
     def play(self, track_id: int, context_json: str = "{}") -> str:
         """Start playing ``track_id``, optionally within a broader playback context.
 
@@ -228,250 +219,186 @@ class ClaudeFMAPI:
         the surrounding queue (e.g. the full album or library view). The player
         cursor is set to ``track_id``'s position in that list.
         """
-        try:
-            context = json.loads(context_json)
-            track = get_track(self._conn, track_id)
-            if not track or not track.file_path:
-                return _err("Track not found or not downloaded")
-            track_ids = context.get("track_ids", [track_id])
-            start_index = track_ids.index(
-                track_id) if track_id in track_ids else 0
-            self._player.queue.set_context(track_ids, start_index)
-            self._player.play(track.file_path)
-            return _ok()
-        except Exception as e:
-            return _err(str(e))
+        context = json.loads(context_json)
+        track = get_track(self._conn, track_id)
+        if not track or not track.file_path:
+            raise ValueError("Track not found or not downloaded")
+        track_ids = context.get("track_ids", [track_id])
+        start_index = track_ids.index(track_id) if track_id in track_ids else 0
+        self._player.queue.set_context(track_ids, start_index)
+        self._player.play(track.file_path)
 
+    @_api_method
     def pause(self) -> str:
         self._player.pause()
-        return _ok()
 
+    @_api_method
     def resume(self) -> str:
         self._player.resume()
-        return _ok()
 
+    @_api_method
     def stop(self) -> str:
         self._player.stop()
-        return _ok()
 
+    @_api_method(raw=True)
     def next_track(self) -> str:
         """Advance the queue and play the next track; skips unplayable tracks (failed/missing).
         Emits ``queue_ended`` if the queue is exhausted."""
-        try:
-            while True:
-                next_id = self._player.queue.next_id()
-                if next_id is None:
-                    event_bus.emit("queue_ended", {})
-                    return json.dumps({"success": True, "ended": True})
-                track = get_track(self._conn, next_id)
-                if track and track.file_path and track.file_status == "available":
-                    self._player.play(track.file_path)
-                    return json.dumps({"success": True, "track_id": next_id})
-                log.debug(f"Skipping unplayable track {next_id} (status={getattr(track, 'file_status', None)})")
-        except Exception as e:
-            return _err(str(e))
+        while True:
+            next_id = self._player.queue.next_id()
+            if next_id is None:
+                event_bus.emit("queue_ended", {})
+                return {"success": True, "ended": True}
+            track = get_track(self._conn, next_id)
+            if track and track.file_path and track.file_status == "available":
+                self._player.play(track.file_path)
+                return {"success": True, "track_id": next_id}
+            log.debug(f"Skipping unplayable track {next_id} (status={getattr(track, 'file_status', None)})")
 
+    @_api_method(raw=True)
     def prev_track(self) -> str:
-        try:
-            while True:
-                prev_id = self._player.queue.prev_id()
-                if prev_id is None:
-                    return _ok()
-                track = get_track(self._conn, prev_id)
-                if track and track.file_path and track.file_status == "available":
-                    self._player.play(track.file_path)
-                    return json.dumps({"success": True, "track_id": prev_id})
-                log.debug(f"Skipping unplayable track {prev_id} going backwards (status={getattr(track, 'file_status', None)})")
-        except Exception as e:
-            return _err(str(e))
+        while True:
+            prev_id = self._player.queue.prev_id()
+            if prev_id is None:
+                return {"success": True}
+            track = get_track(self._conn, prev_id)
+            if track and track.file_path and track.file_status == "available":
+                self._player.play(track.file_path)
+                return {"success": True, "track_id": prev_id}
+            log.debug(f"Skipping unplayable track {prev_id} going backwards (status={getattr(track, 'file_status', None)})")
 
+    @_api_method
     def seek(self, position: float) -> str:
-        try:
-            self._player.seek(position)
-            return _ok()
-        except Exception as e:
-            return _err(str(e))
+        self._player.seek(position)
 
+    @_api_method(raw=True)
     def get_position(self) -> str:
-        return json.dumps({"position": self._player.get_position()})
+        return {"position": self._player.get_position()}
 
+    @_api_method
     def set_volume(self, level: float) -> str:
-        try:
-            self._player.set_volume(level)
-            return _ok()
-        except Exception as e:
-            return _err(str(e))
+        self._player.set_volume(level)
 
+    @_api_method(raw=True)
     def get_player_state(self) -> str:
         q = self._player.queue
-        return json.dumps({
+        return {
             "current_id": q.current_id(),
             "position": self._player.get_position(),
             "paused": self._player.is_paused,
             "volume": self._player.get_volume(),
             "ended": q.ended,
-        })
+        }
 
     # ── Playlists ─────────────────────────────────────────────────────────────
 
+    @_api_method(raw=True)
     def get_playlists(self) -> str:
-        try:
-            playlists = get_all_playlists(self._conn)
-            return json.dumps([p.model_dump(mode="json") for p in playlists])
-        except Exception as e:
-            return _err(str(e))
+        return [p.model_dump(mode="json") for p in get_all_playlists(self._conn)]
 
+    @_api_method(raw=True)
     def create_playlist(self, name: str, playlist_type: str = "manual") -> str:
         """Create a playlist, enforcing the 15-auto-playlist cap by deleting the oldest if needed."""
-        try:
-            if playlist_type == "auto" and get_auto_playlist_count(self._conn) >= AUTO_PLAYLIST_LIMIT:
-                delete_oldest_auto_playlist(self._conn)
-            p = Playlist(name=name, type=playlist_type)
-            pid = insert_playlist(self._conn, p)
-            return json.dumps({"success": True, "id": pid})
-        except Exception as e:
-            return _err(str(e))
+        if playlist_type == "auto" and get_auto_playlist_count(self._conn) >= AUTO_PLAYLIST_LIMIT:
+            delete_oldest_auto_playlist(self._conn)
+        p = Playlist(name=name, type=playlist_type)
+        pid = insert_playlist(self._conn, p)
+        return {"success": True, "id": pid}
 
+    @_api_method(raw=True)
     def get_playlist_tracks(self, playlist_id: int) -> str:
-        try:
-            tracks = get_playlist_tracks(self._conn, playlist_id)
-            return json.dumps([t.model_dump(mode="json") for t in tracks])
-        except Exception as e:
-            return _err(str(e))
+        return [t.model_dump(mode="json") for t in get_playlist_tracks(self._conn, playlist_id)]
 
     # ── Settings ──────────────────────────────────────────────────────────────
 
+    @_api_method(raw=True)
     def get_settings(self) -> str:
-        return json.dumps(get_all_settings(self._conn))
+        return get_all_settings(self._conn)
 
+    @_api_method
     def save_setting(self, key: str, value: str) -> str:
-        try:
-            set_setting(self._conn, key, value)
-            self._get_enrichment().apply_settings()
-            display = "***" if key == "lastfm_api_key" else value
-            log.info(f"Setting saved: {key} = {display}")
-            return _ok()
-        except Exception as e:
-            log.error(f"Failed to save setting '{key}': {e}", exc_info=True)
-            return _err(str(e))
+        set_setting(self._conn, key, value)
+        self._get_enrichment().apply_settings()
+        display = "***" if key == "lastfm_api_key" else value
+        log.info(f"Setting saved: {key} = {display}")
 
+    @_api_method
     def rescan_library(self) -> str:
         """Trigger a background full_scan across the download folder and any additional folders."""
+        download_folder = get_setting(self._conn, "download_folder")
         try:
-            download_folder = get_setting(self._conn, "download_folder")
-            try:
-                additional = json.loads(get_setting(
-                    self._conn, "additional_folders"))
-            except (json.JSONDecodeError, TypeError):
-                additional = []
-            folders = ([download_folder]
-                       if download_folder else []) + additional
-            if folders:
-                start_background_scan(self._conn, folders)
-            return _ok()
-        except Exception as e:
-            return _err(str(e))
+            additional = json.loads(get_setting(self._conn, "additional_folders"))
+        except (json.JSONDecodeError, TypeError):
+            additional = []
+        folders = ([download_folder] if download_folder else []) + additional
+        if folders:
+            start_background_scan(self._conn, folders)
 
     # ── Playlist mutations ────────────────────────────────────────────────────
 
+    @_api_method
     def delete_playlist(self, playlist_id: int) -> str:
-        try:
-            delete_playlist(self._conn, playlist_id)
-            return _ok()
-        except Exception as e:
-            return _err(str(e))
+        delete_playlist(self._conn, playlist_id)
 
+    @_api_method
     def rename_playlist(self, playlist_id: int, name: str) -> str:
-        try:
-            update_playlist_name(self._conn, playlist_id, name)
-            return _ok()
-        except Exception as e:
-            return _err(str(e))
+        update_playlist_name(self._conn, playlist_id, name)
 
     # ── Lyrics ────────────────────────────────────────────────────────────────
 
+    @_api_method
     def fetch_lyrics(self, track_id: int) -> str:
-        try:
-            status = self._get_lrclib().fetch_and_embed(track_id)
-            if status is None:
-                return _err("Track not found")
-            return _ok({"lyrics_status": status})
-        except Exception as e:
-            log.error(f"fetch_lyrics: {e}", exc_info=True)
-            return _err(str(e))
+        status = self._get_lrclib().fetch_and_embed(track_id)
+        if status is None:
+            raise ValueError("Track not found")
+        return {"lyrics_status": status}
 
+    @_api_method
     def fetch_missing_lyrics(self) -> str:
-        try:
-            self._get_lrclib().fetch_missing_lyrics()
-            return _ok()
-        except Exception as e:
-            log.error(f"fetch_missing_lyrics: {e}", exc_info=True)
-            return _err(str(e))
+        self._get_lrclib().fetch_missing_lyrics()
 
+    @_api_method
     def get_lyrics(self, track_id: int) -> str:
-        try:
-            result = self._get_lrclib().get_lyrics(track_id)
-            if result is None:
-                return _err("Track not found")
-            return _ok(result)
-        except Exception as e:
-            log.error(f"get_lyrics: {e}", exc_info=True)
-            return _err(str(e))
+        result = self._get_lrclib().get_lyrics(track_id)
+        if result is None:
+            raise ValueError("Track not found")
+        return result
 
+    @_api_method
     def run_enrichment_lyrics(self) -> str:
-        try:
-            self._get_enrichment().run_lyrics()
-            return _ok()
-        except Exception as e:
-            log.error(f"run_enrichment_lyrics: {e}", exc_info=True)
-            return _err(str(e))
+        self._get_enrichment().run_lyrics()
 
+    @_api_method
     def run_enrichment_artwork(self) -> str:
-        try:
-            self._get_enrichment().run_artwork()
-            return _ok()
-        except Exception as e:
-            log.error(f"run_enrichment_artwork: {e}", exc_info=True)
-            return _err(str(e))
+        self._get_enrichment().run_artwork()
 
+    @_api_method
     def get_track_artwork(self, track_id: int) -> str:
-        try:
-            image_bytes = self._get_cover_art().get_cover_bytes(track_id)
-            if not image_bytes:
-                return _err("No artwork")
-            data_url = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode()
-            return _ok({"data_url": data_url})
-        except Exception as e:
-            log.error(f"get_track_artwork: {e}", exc_info=True)
-            return _err(str(e))
+        image_bytes = self._get_cover_art().get_cover_bytes(track_id)
+        if not image_bytes:
+            raise ValueError("No artwork")
+        data_url = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode()
+        return {"data_url": data_url}
 
+    @_api_method
     def add_to_playlist(self, playlist_id: int, track_id: int) -> str:
-        try:
-            add_track_to_playlist(self._conn, playlist_id, track_id)
-            return _ok()
-        except Exception as e:
-            return _err(str(e))
+        add_track_to_playlist(self._conn, playlist_id, track_id)
 
+    @_api_method
     def remove_from_playlist(self, playlist_id: int, track_id: int) -> str:
-        try:
-            remove_track_from_playlist(self._conn, playlist_id, track_id)
-            return _ok()
-        except Exception as e:
-            return _err(str(e))
+        remove_track_from_playlist(self._conn, playlist_id, track_id)
 
     # ── Connectivity / account checks ─────────────────────────────────────────
 
+    @_api_method
     def check_lastfm_connection(self) -> str:
-        try:
-            self._get_lastfm().search("test", "track", limit=1)
-            return _ok()
-        except Exception as e:
-            return _err(str(e))
+        self._get_lastfm().search("test", "track", limit=1)
 
+    @_api_method(raw=True)
     def check_internet(self) -> str:
         """Probe 8.8.8.8:53 with a 3 s timeout; returns ``{"online": bool}`` (no success wrapper)."""
         try:
             socket.create_connection(("8.8.8.8", 53), timeout=3)
-            return json.dumps({"online": True})
+            return {"online": True}
         except OSError:
-            return json.dumps({"online": False})
+            return {"online": False}

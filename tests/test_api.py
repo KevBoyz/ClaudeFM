@@ -525,6 +525,30 @@ def test_check_internet_offline(db_conn, tmp_path):
     assert result["online"] is False
 
 
+# ── _api_method decorator ─────────────────────────────────────────────────────
+
+def test_api_method_returns_err_on_exception(db_conn, tmp_path):
+    init_db(db_conn)
+    api = _make_api(db_conn, tmp_path)
+    with patch("src.api.api.delete_track", side_effect=RuntimeError("kaboom")):
+        result = json.loads(api.remove_from_library(1))
+    assert result["success"] is False
+    assert "kaboom" in result["error"]
+
+
+def test_api_method_value_error_returns_err_without_error_log(db_conn, tmp_path, caplog):
+    init_db(db_conn)
+    api = _make_api(db_conn, tmp_path)
+    with patch("src.api.api.get_track", side_effect=ValueError("bad input")):
+        with caplog.at_level("ERROR"):
+            result = json.loads(api.get_track(1))
+    assert result["success"] is False
+    assert "bad input" in result["error"]
+    # ValueError is user-facing; should not log at ERROR level
+    error_records = [r for r in caplog.records if r.levelname == "ERROR" and r.name.startswith("claudefm.api")]
+    assert not error_records
+
+
 # ── Last.fm connection check ──────────────────────────────────────────────────
 
 def test_check_lastfm_connection_success(db_conn, tmp_path):
