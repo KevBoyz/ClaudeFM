@@ -530,23 +530,26 @@ def test_check_internet_offline(db_conn, tmp_path):
 def test_api_method_returns_err_on_exception(db_conn, tmp_path):
     init_db(db_conn)
     api = _make_api(db_conn, tmp_path)
-    with patch("src.api.api.delete_track", side_effect=RuntimeError("kaboom")):
+    with patch("src.api.api.log") as mock_log, \
+         patch("src.api.api.delete_track", side_effect=RuntimeError("kaboom")):
         result = json.loads(api.remove_from_library(1))
     assert result["success"] is False
     assert "kaboom" in result["error"]
+    mock_log.error.assert_called_once()
+    msg, *_ = mock_log.error.call_args.args
+    assert "remove_from_library" in msg and "kaboom" in msg
 
 
-def test_api_method_value_error_returns_err_without_error_log(db_conn, tmp_path, caplog):
+def test_api_method_value_error_returns_err_without_error_log(db_conn, tmp_path):
     init_db(db_conn)
     api = _make_api(db_conn, tmp_path)
-    with patch("src.api.api.get_track", side_effect=ValueError("bad input")):
-        with caplog.at_level("ERROR"):
-            result = json.loads(api.get_track(1))
+    with patch("src.api.api.log") as mock_log, \
+         patch("src.api.api.get_track", side_effect=ValueError("bad input")):
+        result = json.loads(api.get_track(1))
     assert result["success"] is False
     assert "bad input" in result["error"]
     # ValueError is user-facing; should not log at ERROR level
-    error_records = [r for r in caplog.records if r.levelname == "ERROR" and r.name.startswith("claudefm.api")]
-    assert not error_records
+    mock_log.error.assert_not_called()
 
 
 # ── Last.fm connection check ──────────────────────────────────────────────────
