@@ -15,7 +15,7 @@ Desktop music player for Windows: search Last.fm → download from YouTube → p
 | DB | sqlite3 stdlib | WAL + FK + `check_same_thread=False` |
 | Models | pydantic 2.13.4 | Mirror DB schema exactly |
 | Tags | mutagen 1.47.0 | Audio file metadata r/w |
-| Tests | pytest 8.2.0 + pytest-mock 3.14.0 | 213 tests, 14 modules |
+| Tests | pytest 8.2.0 + pytest-mock 3.14.0 | 245 tests, 15 modules |
 
 ## Commands
 
@@ -39,7 +39,7 @@ pip install -r requirements.txt
 app.py                          # Entry point: init DB, quick scan, pywebview window
 src/
   models/
-    track.py                    # Track (Pydantic) — mirrors tracks table, incl. lyrics_status
+    track.py                    # Track (Pydantic) — mirrors tracks table, incl. lyrics_status, artwork_status, *_fetched_at
     playlist.py                 # Playlist + PlaylistTrack
     artist.py                   # Last.fm result, no DB persistence
     album.py                    # Last.fm result, no DB persistence
@@ -51,8 +51,9 @@ src/
     lastfm_service.py           # pylast search + cache table + get_artist_top_tracks + get_cover_image_url
     youtube_service.py          # yt-dlp download + sanitize_filename + ThreadPoolExecutor
     player_service.py           # sounddevice playback + Queue + seek + volume + threading.Lock
-    lrclib_service.py           # LRCLIB fetch + mutagen embed + async batch fetch
-    cover_art_service.py        # Last.fm cover art fetch + mutagen embed (M4A/MP3)
+    lrclib_service.py           # LRCLIB fetch + mutagen embed + async batch fetch + enrichment query
+    cover_art_service.py        # Last.fm cover art fetch + mutagen embed/read (M4A/MP3) + DB status writes
+    enrichment_scheduler.py     # Periodic enrichment coordinator: lyrics + artwork batches via threading.Timer
   api/
     api.py                      # ClaudeFMAPI — all methods callable from JS via pywebview js_api
   utils/
@@ -65,10 +66,10 @@ src/
       player-bar.js             # Bottom playback bar UI
       downloads.js              # Download queue tracking + history
       lyrics.js / lyrics-panel.js # Lyrics fetch + panel open/close
-      topbar.js                 # Activity badge (downloads + lyrics), notification panel
+      topbar.js                 # Activity badge (downloads + lyrics + enrichment), notification panel
       sidebar.js                # Nav + search results rendering
       context-menu.js           # Right-click actions
-      components.js             # Shared: trackCard(), artistCard(), albumCard(), _localIdx
+      components.js             # Shared: trackCard(), artistCard(), albumCard(), loadArtwork(), _localIdx
       keyboard.js               # Space/arrow shortcuts
       router.js                 # Hash-based SPA router
       pages/                    # home, library, artists, albums, playlists, playlist-detail,
@@ -84,7 +85,9 @@ docs/superpowers/plans/         # Implementation plans
 ```
 tracks          — id, title, artist, album, duration, file_path, audio_format,
                   youtube_url, date_downloaded, download_status, download_error,
-                  file_status, lyrics_status (not_fetched|not_found|plain_text|synchronized|instrumental)
+                  file_status, lyrics_status (not_fetched|not_found|plain_text|synchronized|instrumental),
+                  artwork_status (not_fetched|embedded|not_found),
+                  lyrics_fetched_at (ISO datetime), artwork_fetched_at (ISO datetime)
 playlists       — id, name, type (auto|manual), created_at, updated_at
 playlist_tracks — playlist_id, track_id, position
 settings        — key, value (text; all values stored as strings)
@@ -106,6 +109,10 @@ DB file: `claudefm.db` at project root (gitignored).
 | `auto_fetch_lyrics` | `true` |
 | `auto_fetch_artwork` | `true` |
 | `player_volume` | `1.0` |
+| `enrich_repeat_lyrics` | `false` |
+| `enrich_repeat_artwork` | `false` |
+| `enrich_interval_days` | `1` |
+| `enrich_retry_not_found_days` | `7` |
 
 ## API Response Format
 
@@ -147,3 +154,9 @@ Push events via `event_bus.emit(type, payload)` → `window.evaluate_js("onEvent
 | JS runtime auto-detection in `_run_ytdlp` | `shutil.which` checks node/deno/phantomjs at download time; passes to yt-dlp if found to enable full format support |
 | `_localIdx` Map in `components.js` | O(1) local availability check per search result; avoids N API calls when rendering Last.fm results |
 | `player:changed` listener in `components.js` | Updates `.playing` class on visible track cards without re-rendering the list |
+| `artwork_status` + `artwork_fetched_at` columns on `tracks` | Mirrors `lyrics_status` pattern; enables cooldown-based retry without a separate job queue |
+| `EnrichmentScheduler` standalone service | Owns timer lifecycle; `LRCLibService` / `CoverArtService` do the work, scheduler owns timing — clear separation |
+| `threading.Timer` for auto-repeat in `EnrichmentScheduler` | No new deps; timer re-reads settings at fire time so interval changes take effect without restart |
+| `save_setting()` calls `apply_settings()` | Ensures timer reconfiguration is immediate after any setting change from the UI |
+| `get_track_artwork` returns base64 data URL | Avoids exposing file paths to JS; works cross-platform without a local HTTP server |
+| `loadArtwork(container)` lazy-loads via `data-artwork` attr | One API call per visible embedded track; `delete thumb.dataset.artwork` prevents double-load on re-render |
