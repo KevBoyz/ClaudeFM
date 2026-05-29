@@ -4,11 +4,10 @@ from pathlib import Path
 from lrcup import LRCLib, AudioFile
 from lrcup.audio import UnsupportedSuffix
 from src.database.database import (
-    get_track, set_enrichment_status, get_tracks_to_enrich,
+    get_track, set_enrichment_status,
 )
 from src.models.enums import LyricsStatus
 from src.utils.logger import get_logger
-from src.utils.event_bus import event_bus
 
 log = get_logger("lrclib")
 
@@ -74,7 +73,6 @@ class LyricsEmbedder:
 class LRCLibService:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
-        self._running = threading.Event()
         self._fetcher = LRCLibFetcher()
         self._embedder = LyricsEmbedder()
 
@@ -131,42 +129,6 @@ class LRCLibService:
         """Run ``fetch_and_embed`` in a daemon thread (fire-and-forget, used post-download)."""
         threading.Thread(target=self.fetch_and_embed,
                          args=(track_id,), daemon=True).start()
-
-    def fetch_missing_lyrics(self, retry_not_found_after_days: int = 7) -> None:
-        """Start a batch lyrics fetch, if not already running."""
-        if not self._running.is_set():
-            self._running.set()
-            threading.Thread(
-                target=self._run_batch,
-                args=(retry_not_found_after_days,),
-                daemon=True,
-            ).start()
-
-    def _run_batch(self, retry_not_found_after_days: int = 7) -> None:
-        tracks = get_tracks_to_enrich(
-            self._conn, kind="lyrics", retry_not_found_after_days=retry_not_found_after_days
-        )
-        event_bus.emit("enrichment_lyrics_started", {"total": len(tracks)})
-        counters = {
-            "synchronized": 0, "plain_text": 0, "instrumental": 0,
-            "not_found": 0, "not_supported": 0, "errors": 0,
-        }
-        for track in tracks:
-            status = LyricsStatus.NOT_FETCHED
-            try:
-                status = self.fetch_and_embed(track.id)
-                if status == LyricsStatus.NOT_FETCHED:
-                    counters["errors"] += 1
-                elif status in counters:
-                    counters[status] += 1
-            except Exception:
-                log.error(
-                    f"Unexpected error processing track {track.id}", exc_info=True)
-                counters["errors"] += 1
-            event_bus.emit("lyrics_progress", {
-                           "track_id": track.id, "status": status})
-        self._running.clear()
-        event_bus.emit("lyrics_fetch_complete", counters)
 
     def get_lyrics(self, track_id: int) -> dict | None:
         track = get_track(self._conn, track_id)

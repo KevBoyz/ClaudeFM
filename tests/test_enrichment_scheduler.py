@@ -26,18 +26,6 @@ def svc(db_conn):
     return EnrichmentScheduler(db_conn, lrclib, cover_art), lrclib, cover_art, db_conn
 
 
-def test_run_lyrics_calls_fetch_missing_with_retry_days(svc):
-    scheduler, lrclib, _, db_conn = svc
-    set_setting(db_conn, "enrich_retry_not_found_days", "14")
-    scheduler.run_lyrics()
-    lrclib.fetch_missing_lyrics.assert_called_once_with(retry_not_found_after_days=14)
-
-
-def test_run_lyrics_uses_default_retry_days(svc):
-    scheduler, lrclib, _, _ = svc
-    scheduler.run_lyrics()
-    lrclib.fetch_missing_lyrics.assert_called_once_with(retry_not_found_after_days=7)
-
 
 def test_run_artwork_processes_pending_tracks(svc):
     scheduler, _, cover_art, db_conn = svc
@@ -113,3 +101,53 @@ def test_run_artwork_batch_emits_started_and_complete(svc, mocker):
 
     started = next(e[1] for e in emitted if e[0] == "enrichment_artwork_started")
     assert started["total"] == 1
+
+
+def test_run_lyrics_emits_started_progress_complete(svc, mocker):
+    scheduler, lrclib, _, db_conn = svc
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed", file_status="available")
+    lrclib.fetch_and_embed.return_value = "synchronized"
+
+    emitted = []
+    mocker.patch(
+        "src.services.enrichment_scheduler.event_bus.emit",
+        side_effect=lambda t, p: emitted.append((t, p)),
+    )
+
+    scheduler._run_lyrics_batch()
+
+    types = [e[0] for e in emitted]
+    assert "enrichment_lyrics_started" in types
+    assert "lyrics_progress" in types
+    assert "lyrics_fetch_complete" in types
+    complete = next(e[1] for e in emitted if e[0] == "lyrics_fetch_complete")
+    assert complete["synchronized"] == 1
+
+
+def test_run_lyrics_skips_if_already_running(svc):
+    scheduler, lrclib, _, db_conn = svc
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed", file_status="available")
+    scheduler._lyrics_running.set()
+    scheduler.run_lyrics()
+    lrclib.fetch_and_embed.assert_not_called()
+    scheduler._lyrics_running.clear()
+
+
+def test_run_lyrics_per_track_exception_counted_as_error(svc, mocker):
+    scheduler, lrclib, _, db_conn = svc
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed", file_status="available")
+    lrclib.fetch_and_embed.side_effect = RuntimeError("boom")
+
+    emitted = []
+    mocker.patch(
+        "src.services.enrichment_scheduler.event_bus.emit",
+        side_effect=lambda t, p: emitted.append((t, p)),
+    )
+
+    scheduler._run_lyrics_batch()
+
+    complete = next(e[1] for e in emitted if e[0] == "lyrics_fetch_complete")
+    assert complete["errors"] == 1

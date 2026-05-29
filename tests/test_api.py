@@ -89,11 +89,11 @@ def test_fetch_missing_lyrics_returns_ok(db_conn, tmp_path):
     init_db(db_conn)
     api = _make_api(db_conn, tmp_path)
 
-    with patch("src.api.api.LRCLibService") as MockSvc:
+    with patch("src.api.api.EnrichmentScheduler") as MockSched:
         result = json.loads(api.fetch_missing_lyrics())
 
     assert result["success"] is True
-    MockSvc.return_value.fetch_missing_lyrics.assert_called_once()
+    MockSched.return_value.run_lyrics.assert_called_once()
 
 
 def test_get_lyrics_returns_text_and_status(db_conn, tmp_path):

@@ -374,7 +374,7 @@ class ClaudeFMAPI:
 
     @_api_method
     def fetch_missing_lyrics(self) -> str:
-        self._get_lrclib().fetch_missing_lyrics()
+        self._get_enrichment().run_lyrics()
 
     @_api_method
     def get_lyrics(self, track_id: int) -> str:
