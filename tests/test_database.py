@@ -2,14 +2,13 @@
 import pytest
 from src.database.database import (
     init_db, insert_track, get_track, update_track_status, get_all_tracks,
-    update_lyrics_status, get_tracks_without_lyrics,
+    get_tracks_without_lyrics,
     get_tracks_by_artist, get_tracks_by_album, get_all_artists, get_all_albums,
     search_tracks_local, delete_track,
     insert_playlist, get_all_playlists, get_auto_playlist_count,
     delete_oldest_auto_playlist, get_playlist_tracks, delete_playlist,
     update_playlist_name, add_track_to_playlist, remove_track_from_playlist,
-    update_artwork_status, update_lyrics_fetched_at,
-    get_tracks_to_enrich_lyrics, get_tracks_to_enrich_artwork,
+    get_tracks_to_enrich, set_enrichment_status,
 )
 from src.models.track import Track
 from src.models.playlist import Playlist
@@ -59,7 +58,7 @@ def test_lyrics_status_default_not_fetched(db_conn):
 def test_update_lyrics_status(db_conn):
     init_db(db_conn)
     track_id = insert_track(db_conn, Track(title="Creep", artist="Radiohead"))
-    update_lyrics_status(db_conn, track_id, "synchronized")
+    set_enrichment_status(db_conn, track_id, "lyrics", "synchronized")
     fetched = get_track(db_conn, track_id)
     assert fetched.lyrics_status == "synchronized"
 
@@ -69,8 +68,8 @@ def test_get_tracks_without_lyrics_filters_correctly(db_conn):
     id1 = insert_track(db_conn, Track(title="A", artist="X"))
     id2 = insert_track(db_conn, Track(title="B", artist="X"))
     id3 = insert_track(db_conn, Track(title="C", artist="X"))
-    update_lyrics_status(db_conn, id2, "synchronized")
-    update_lyrics_status(db_conn, id3, "not_found")
+    set_enrichment_status(db_conn, id2, "lyrics", "synchronized")
+    set_enrichment_status(db_conn, id3, "lyrics", "not_found")
     result = get_tracks_without_lyrics(db_conn)
     ids = [t.id for t in result]
     assert id1 in ids
@@ -295,36 +294,13 @@ def test_delete_track_cascades_to_playlist_tracks(db_conn):
     assert get_playlist_tracks(db_conn, pid) == []
 
 
-# ── update_lyrics_fetched_at ───────────────────────────────────────────────────
-
-def test_update_lyrics_fetched_at_writes_timestamp(db_conn):
-    init_db(db_conn)
-    tid = insert_track(db_conn, Track(title="A", artist="X"))
-    ts = datetime(2025, 1, 15, 10, 0, 0)
-    update_lyrics_fetched_at(db_conn, tid, ts)
-    track = get_track(db_conn, tid)
-    assert track.lyrics_fetched_at == ts
-
-
-# ── update_artwork_status ──────────────────────────────────────────────────────
-
-def test_update_artwork_status_writes_status_and_timestamp(db_conn):
-    init_db(db_conn)
-    tid = insert_track(db_conn, Track(title="A", artist="X"))
-    ts = datetime(2025, 1, 15, 10, 0, 0)
-    update_artwork_status(db_conn, tid, "embedded", ts)
-    track = get_track(db_conn, tid)
-    assert track.artwork_status == "embedded"
-    assert track.artwork_fetched_at == ts
-
-
 # ── get_tracks_to_enrich_lyrics ────────────────────────────────────────────────
 
 def test_get_tracks_to_enrich_lyrics_includes_not_fetched(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(title="A", artist="X"))
     update_track_status(db_conn, tid, download_status="completed")
-    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    result = get_tracks_to_enrich(db_conn, kind="lyrics", retry_not_found_after_days=7)
     assert any(t.id == tid for t in result)
 
 
@@ -332,15 +308,15 @@ def test_get_tracks_to_enrich_lyrics_excludes_synchronized(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(title="A", artist="X"))
     update_track_status(db_conn, tid, download_status="completed")
-    update_lyrics_status(db_conn, tid, "synchronized")
-    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    set_enrichment_status(db_conn, tid, "lyrics", "synchronized")
+    result = get_tracks_to_enrich(db_conn, kind="lyrics", retry_not_found_after_days=7)
     assert not any(t.id == tid for t in result)
 
 
 def test_get_tracks_to_enrich_lyrics_excludes_not_downloaded(db_conn):
     init_db(db_conn)
     insert_track(db_conn, Track(title="A", artist="X"))  # download_status = pending
-    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    result = get_tracks_to_enrich(db_conn, kind="lyrics", retry_not_found_after_days=7)
     assert result == []
 
 
@@ -348,12 +324,12 @@ def test_get_tracks_to_enrich_lyrics_retries_not_found_after_cooldown(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(title="A", artist="X"))
     update_track_status(db_conn, tid, download_status="completed")
-    update_lyrics_status(db_conn, tid, "not_found")
+    set_enrichment_status(db_conn, tid, "lyrics", "not_found")
     db_conn.execute(
         "UPDATE tracks SET lyrics_fetched_at=datetime('now','-8 days') WHERE id=?", (tid,)
     )
     db_conn.commit()
-    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    result = get_tracks_to_enrich(db_conn, kind="lyrics", retry_not_found_after_days=7)
     assert any(t.id == tid for t in result)
 
 
@@ -361,12 +337,12 @@ def test_get_tracks_to_enrich_lyrics_skips_not_found_within_cooldown(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(title="A", artist="X"))
     update_track_status(db_conn, tid, download_status="completed")
-    update_lyrics_status(db_conn, tid, "not_found")
+    set_enrichment_status(db_conn, tid, "lyrics", "not_found")
     db_conn.execute(
         "UPDATE tracks SET lyrics_fetched_at=datetime('now','-3 days') WHERE id=?", (tid,)
     )
     db_conn.commit()
-    result = get_tracks_to_enrich_lyrics(db_conn, retry_not_found_after_days=7)
+    result = get_tracks_to_enrich(db_conn, kind="lyrics", retry_not_found_after_days=7)
     assert not any(t.id == tid for t in result)
 
 
@@ -376,7 +352,7 @@ def test_get_tracks_to_enrich_artwork_includes_not_fetched(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(title="A", artist="X"))
     update_track_status(db_conn, tid, download_status="completed")
-    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    result = get_tracks_to_enrich(db_conn, kind="artwork", retry_not_found_after_days=7)
     assert any(t.id == tid for t in result)
 
 
@@ -384,15 +360,15 @@ def test_get_tracks_to_enrich_artwork_excludes_embedded(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(title="A", artist="X"))
     update_track_status(db_conn, tid, download_status="completed")
-    update_artwork_status(db_conn, tid, "embedded", datetime(2025, 1, 1))
-    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    set_enrichment_status(db_conn, tid, "artwork", "embedded")
+    result = get_tracks_to_enrich(db_conn, kind="artwork", retry_not_found_after_days=7)
     assert not any(t.id == tid for t in result)
 
 
 def test_get_tracks_to_enrich_artwork_excludes_not_downloaded(db_conn):
     init_db(db_conn)
     insert_track(db_conn, Track(title="A", artist="X"))
-    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    result = get_tracks_to_enrich(db_conn, kind="artwork", retry_not_found_after_days=7)
     assert result == []
 
 
@@ -400,12 +376,12 @@ def test_get_tracks_to_enrich_artwork_retries_not_found_after_cooldown(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(title="A", artist="X"))
     update_track_status(db_conn, tid, download_status="completed")
-    update_artwork_status(db_conn, tid, "not_found", datetime(2025, 1, 1))
+    set_enrichment_status(db_conn, tid, "artwork", "not_found")
     db_conn.execute(
         "UPDATE tracks SET artwork_fetched_at=datetime('now','-8 days') WHERE id=?", (tid,)
     )
     db_conn.commit()
-    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    result = get_tracks_to_enrich(db_conn, kind="artwork", retry_not_found_after_days=7)
     assert any(t.id == tid for t in result)
 
 
@@ -413,12 +389,12 @@ def test_get_tracks_to_enrich_artwork_skips_not_found_within_cooldown(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(title="A", artist="X"))
     update_track_status(db_conn, tid, download_status="completed")
-    update_artwork_status(db_conn, tid, "not_found", datetime(2025, 1, 1))
+    set_enrichment_status(db_conn, tid, "artwork", "not_found")
     db_conn.execute(
         "UPDATE tracks SET artwork_fetched_at=datetime('now','-3 days') WHERE id=?", (tid,)
     )
     db_conn.commit()
-    result = get_tracks_to_enrich_artwork(db_conn, retry_not_found_after_days=7)
+    result = get_tracks_to_enrich(db_conn, kind="artwork", retry_not_found_after_days=7)
     assert not any(t.id == tid for t in result)
 
 
@@ -439,3 +415,52 @@ def test_row_to_track_parses_all_datetime_fields(db_conn):
     assert t.date_downloaded == expected
     assert t.lyrics_fetched_at == expected
     assert t.artwork_fetched_at == expected
+
+
+# ── get_tracks_to_enrich (generalized) ────────────────────────────────────────
+
+def test_get_tracks_to_enrich_lyrics_kind(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    result = get_tracks_to_enrich(db_conn, kind="lyrics", retry_not_found_after_days=7)
+    assert any(t.id == tid for t in result)
+
+
+def test_get_tracks_to_enrich_artwork_kind(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    update_track_status(db_conn, tid, download_status="completed")
+    result = get_tracks_to_enrich(db_conn, kind="artwork", retry_not_found_after_days=7)
+    assert any(t.id == tid for t in result)
+
+
+def test_get_tracks_to_enrich_rejects_unknown_kind(db_conn):
+    init_db(db_conn)
+    with pytest.raises(ValueError):
+        get_tracks_to_enrich(db_conn, kind="bogus", retry_not_found_after_days=7)
+
+
+def test_set_enrichment_status_lyrics_writes_status_and_now(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    set_enrichment_status(db_conn, tid, kind="lyrics", status="synchronized")
+    t = get_track(db_conn, tid)
+    assert t.lyrics_status == "synchronized"
+    assert t.lyrics_fetched_at is not None
+
+
+def test_set_enrichment_status_artwork_writes_status_and_now(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    set_enrichment_status(db_conn, tid, kind="artwork", status="embedded")
+    t = get_track(db_conn, tid)
+    assert t.artwork_status == "embedded"
+    assert t.artwork_fetched_at is not None
+
+
+def test_set_enrichment_status_rejects_unknown_kind(db_conn):
+    init_db(db_conn)
+    tid = insert_track(db_conn, Track(title="A", artist="X"))
+    with pytest.raises(ValueError):
+        set_enrichment_status(db_conn, tid, kind="bogus", status="x")

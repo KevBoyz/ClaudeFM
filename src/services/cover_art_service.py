@@ -1,13 +1,12 @@
 import sqlite3
 import threading
 import urllib.request
-from datetime import datetime
 from pathlib import Path
 
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.id3 import ID3, APIC, ID3NoHeaderError
 
-from src.database.database import get_track, update_artwork_status, update_track_album
+from src.database.database import get_track, set_enrichment_status, update_track_album
 from src.models.enums import ArtworkStatus
 from src.utils.logger import get_logger
 
@@ -23,14 +22,16 @@ class CoverArtEmbedder:
             audio = MP4(file_path)
             if audio.tags is None:
                 audio.add_tags()
-            audio.tags['covr'] = [MP4Cover(image_data, imageformat=MP4Cover.FORMAT_JPEG)]
+            audio.tags['covr'] = [
+                MP4Cover(image_data, imageformat=MP4Cover.FORMAT_JPEG)]
             audio.save()
         elif ext == '.mp3':
             try:
                 audio = ID3(file_path)
             except ID3NoHeaderError:
                 audio = ID3()
-            audio.add(APIC(mime='image/jpeg', type=3, desc='Cover', data=image_data))
+            audio.add(APIC(mime='image/jpeg', type=3,
+                      desc='Cover', data=image_data))
             audio.save(file_path)
         else:
             raise ValueError(f"Unsupported format: {ext}")
@@ -59,7 +60,8 @@ class CoverArtFetcher:
     """Download raw image bytes from a URL."""
 
     def fetch_bytes(self, url: str) -> bytes:
-        req = urllib.request.Request(url, headers={"User-Agent": "ClaudeFM/1.0"})
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "ClaudeFM/1.0"})
         resp = urllib.request.urlopen(req, timeout=10)
         try:
             return resp.read()
@@ -85,20 +87,24 @@ class CoverArtService:
         if not album:
             album = self._lastfm.get_track_album(track.artist, track.title)
             if album:
-                log.debug(f"Resolved album for track {track_id} via Last.fm: {album!r}")
+                log.debug(
+                    f"Resolved album for track {track_id} via Last.fm: {album!r}")
                 update_track_album(self._conn, track_id, album)
 
         url = self._lastfm.get_cover_image_url(track.artist, album)
         if not url:
-            log.debug(f"No cover art URL for track {track_id} ({track.artist!r}/{album!r})")
-            update_artwork_status(self._conn, track_id, ArtworkStatus.NOT_FOUND, datetime.now())
+            log.debug(
+                f"No cover art URL for track {track_id} ({track.artist!r}/{album!r})")
+            set_enrichment_status(self._conn, track_id,
+                                  "artwork", ArtworkStatus.NOT_FOUND)
             return ArtworkStatus.NOT_FOUND
 
         try:
             image_data = self._fetcher.fetch_bytes(url)
         except Exception as e:
             # Transient failure — leave as NOT_FETCHED so next batch retries without cooldown.
-            log.warning(f"Failed to download cover art for track {track_id}: {e}")
+            log.warning(
+                f"Failed to download cover art for track {track_id}: {e}")
             return ArtworkStatus.NOT_FETCHED
 
         try:
@@ -108,11 +114,13 @@ class CoverArtService:
             log.warning(f"Failed to embed cover art for track {track_id}: {e}")
             return ArtworkStatus.NOT_FETCHED
 
-        update_artwork_status(self._conn, track_id, ArtworkStatus.EMBEDDED, datetime.now())
+        set_enrichment_status(self._conn, track_id,
+                              "artwork", ArtworkStatus.EMBEDDED)
         return ArtworkStatus.EMBEDDED
 
     def fetch_and_embed_async(self, track_id: int) -> None:
-        threading.Thread(target=self.fetch_and_embed, args=(track_id,), daemon=True).start()
+        threading.Thread(target=self.fetch_and_embed,
+                         args=(track_id,), daemon=True).start()
 
     def get_cover_bytes(self, track_id: int) -> bytes | None:
         track = get_track(self._conn, track_id)

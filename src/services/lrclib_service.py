@@ -1,12 +1,10 @@
 import sqlite3
 import threading
-from datetime import datetime
 from pathlib import Path
 from lrcup import LRCLib, AudioFile
 from lrcup.audio import UnsupportedSuffix
 from src.database.database import (
-    get_track, update_lyrics_status, update_lyrics_fetched_at,
-    get_tracks_to_enrich_lyrics,
+    get_track, set_enrichment_status, get_tracks_to_enrich,
 )
 from src.models.enums import LyricsStatus
 from src.utils.logger import get_logger
@@ -65,7 +63,8 @@ class LyricsEmbedder:
                     remaining = time_ms % 60000
                     seconds = remaining // 1000
                     ms = remaining % 1000
-                    lines.append(f"[{minutes:02d}:{seconds:02d}.{ms:03d}] {text}")
+                    lines.append(
+                        f"[{minutes:02d}:{seconds:02d}.{ms:03d}] {text}")
                 return "\n".join(lines)
             if isinstance(value, USLT):
                 return str(value)
@@ -84,7 +83,6 @@ class LRCLibService:
         if not track or not track.file_path:
             return None
 
-        now = datetime.now()
         result = None
 
         if track.duration is not None:
@@ -93,28 +91,30 @@ class LRCLibService:
                     track.title, track.artist, track.album or "", track.duration
                 )
             except Exception:
-                log.error(f"LRCLib.get failed for track {track_id}", exc_info=True)
-                update_lyrics_status(self._conn, track_id, LyricsStatus.NOT_FETCHED)
-                update_lyrics_fetched_at(self._conn, track_id, now)
+                log.error(
+                    f"LRCLib.get failed for track {track_id}", exc_info=True)
+                set_enrichment_status(
+                    self._conn, track_id, "lyrics", LyricsStatus.NOT_FETCHED)
                 return LyricsStatus.NOT_FETCHED
 
         if result is None:
             try:
                 result = self._fetcher.search(track.title, track.artist)
             except Exception:
-                log.error(f"LRCLib.search failed for track {track_id}", exc_info=True)
-                update_lyrics_status(self._conn, track_id, LyricsStatus.NOT_FETCHED)
-                update_lyrics_fetched_at(self._conn, track_id, now)
+                log.error(
+                    f"LRCLib.search failed for track {track_id}", exc_info=True)
+                set_enrichment_status(
+                    self._conn, track_id, "lyrics", LyricsStatus.NOT_FETCHED)
                 return LyricsStatus.NOT_FETCHED
 
         if result is None:
-            update_lyrics_status(self._conn, track_id, LyricsStatus.NOT_FOUND)
-            update_lyrics_fetched_at(self._conn, track_id, now)
+            set_enrichment_status(self._conn, track_id,
+                                  "lyrics", LyricsStatus.NOT_FOUND)
             return LyricsStatus.NOT_FOUND
 
         if result.instrumental:
-            update_lyrics_status(self._conn, track_id, LyricsStatus.INSTRUMENTAL)
-            update_lyrics_fetched_at(self._conn, track_id, now)
+            set_enrichment_status(self._conn, track_id,
+                                  "lyrics", LyricsStatus.INSTRUMENTAL)
             return LyricsStatus.INSTRUMENTAL
 
         if result.syncedLyrics is not None:
@@ -122,30 +122,32 @@ class LRCLibService:
         elif result.plainLyrics is not None:
             lyrics, state, status = result.plainLyrics, "unsynced", LyricsStatus.PLAIN_TEXT
         else:
-            update_lyrics_status(self._conn, track_id, LyricsStatus.NOT_FOUND)
-            update_lyrics_fetched_at(self._conn, track_id, now)
+            set_enrichment_status(self._conn, track_id,
+                                  "lyrics", LyricsStatus.NOT_FOUND)
             return LyricsStatus.NOT_FOUND
 
         try:
             self._embedder.embed(track.file_path, state, lyrics)
         except UnsupportedSuffix:
-            log.error(f"Unsupported format for track {track_id}: {track.file_path}")
-            update_lyrics_status(self._conn, track_id, LyricsStatus.NOT_SUPPORTED)
-            update_lyrics_fetched_at(self._conn, track_id, now)
+            log.error(
+                f"Unsupported format for track {track_id}: {track.file_path}")
+            set_enrichment_status(self._conn, track_id,
+                                  "lyrics", LyricsStatus.NOT_SUPPORTED)
             return LyricsStatus.NOT_SUPPORTED
         except Exception as e:
-            log.error(f"Failed to embed lyrics for track {track_id}: {e}", exc_info=True)
-            update_lyrics_status(self._conn, track_id, LyricsStatus.NOT_FETCHED)
-            update_lyrics_fetched_at(self._conn, track_id, now)
+            log.error(
+                f"Failed to embed lyrics for track {track_id}: {e}", exc_info=True)
+            set_enrichment_status(self._conn, track_id,
+                                  "lyrics", LyricsStatus.NOT_FETCHED)
             return LyricsStatus.NOT_FETCHED
 
-        update_lyrics_status(self._conn, track_id, status)
-        update_lyrics_fetched_at(self._conn, track_id, now)
+        set_enrichment_status(self._conn, track_id, "lyrics", status)
         return status
 
     def fetch_and_embed_async(self, track_id: int) -> None:
         """Run ``fetch_and_embed`` in a daemon thread (fire-and-forget, used post-download)."""
-        threading.Thread(target=self.fetch_and_embed, args=(track_id,), daemon=True).start()
+        threading.Thread(target=self.fetch_and_embed,
+                         args=(track_id,), daemon=True).start()
 
     def fetch_missing_lyrics(self, retry_not_found_after_days: int = 7) -> None:
         """Start a batch lyrics fetch, if not already running."""
@@ -158,8 +160,8 @@ class LRCLibService:
             ).start()
 
     def _run_batch(self, retry_not_found_after_days: int = 7) -> None:
-        tracks = get_tracks_to_enrich_lyrics(
-            self._conn, retry_not_found_after_days=retry_not_found_after_days
+        tracks = get_tracks_to_enrich(
+            self._conn, kind="lyrics", retry_not_found_after_days=retry_not_found_after_days
         )
         event_bus.emit("enrichment_lyrics_started", {"total": len(tracks)})
         counters = {
@@ -175,9 +177,11 @@ class LRCLibService:
                 elif status in counters:
                     counters[status] += 1
             except Exception:
-                log.error(f"Unexpected error processing track {track.id}", exc_info=True)
+                log.error(
+                    f"Unexpected error processing track {track.id}", exc_info=True)
                 counters["errors"] += 1
-            event_bus.emit("lyrics_progress", {"track_id": track.id, "status": status})
+            event_bus.emit("lyrics_progress", {
+                           "track_id": track.id, "status": status})
         self._running.clear()
         event_bus.emit("lyrics_fetch_complete", counters)
 

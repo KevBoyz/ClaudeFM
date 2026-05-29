@@ -172,72 +172,50 @@ def update_track_album(conn: sqlite3.Connection, track_id: int, album: str) -> N
     conn.commit()
 
 
-def update_lyrics_status(conn: sqlite3.Connection, track_id: int, status: str) -> None:
-    conn.execute("UPDATE tracks SET lyrics_status=? WHERE id=?",
-                 (status, track_id))
-    conn.commit()
+_ENRICHMENT_KINDS = {"lyrics", "artwork"}
 
 
-def update_lyrics_fetched_at(conn: sqlite3.Connection, track_id: int, fetched_at: datetime) -> None:
-    conn.execute(
-        "UPDATE tracks SET lyrics_fetched_at=? WHERE id=?",
-        (fetched_at.isoformat(), track_id),
-    )
-    conn.commit()
+def get_tracks_to_enrich(
+    conn: sqlite3.Connection, kind: str, retry_not_found_after_days: int
+) -> list[Track]:
+    """Return tracks pending enrichment for ``kind`` ('lyrics' or 'artwork')."""
+    if kind not in _ENRICHMENT_KINDS:
+        raise ValueError(f"unknown enrichment kind: {kind!r}")
+    status_col = f"{kind}_status"
+    ts_col = f"{kind}_fetched_at"
+    rows = conn.execute(
+        f"""SELECT * FROM tracks
+            WHERE download_status = 'completed'
+              AND file_status = 'available'
+              AND (
+                {status_col} = 'not_fetched'
+                OR (
+                  {status_col} = 'not_found'
+                  AND (
+                    {ts_col} IS NULL
+                    OR datetime({ts_col}) < datetime('now', ? || ' days')
+                  )
+                )
+              )""",
+        (f"-{retry_not_found_after_days}",),
+    ).fetchall()
+    return [_row_to_track(r) for r in rows]
 
 
-def update_artwork_status(
-    conn: sqlite3.Connection, track_id: int, status: str, fetched_at: datetime
+def set_enrichment_status(
+    conn: sqlite3.Connection, track_id: int, kind: str, status: str
 ) -> None:
+    """Write ``status`` + ``fetched_at=now()`` for the given enrichment ``kind``."""
+    if kind not in _ENRICHMENT_KINDS:
+        raise ValueError(f"unknown enrichment kind: {kind!r}")
+    status_col = f"{kind}_status"
+    ts_col = f"{kind}_fetched_at"
     conn.execute(
-        "UPDATE tracks SET artwork_status=?, artwork_fetched_at=? WHERE id=?",
-        (status, fetched_at.isoformat(), track_id),
+        f"UPDATE tracks SET {status_col}=?, {ts_col}=? WHERE id=?",
+        (status, datetime.now().isoformat(), track_id),
     )
     conn.commit()
 
-
-def get_tracks_to_enrich_lyrics(
-    conn: sqlite3.Connection, retry_not_found_after_days: int
-) -> list[Track]:
-    rows = conn.execute(
-        """SELECT * FROM tracks
-           WHERE download_status = 'completed'
-             AND file_status = 'available'
-             AND (
-               lyrics_status = 'not_fetched'
-               OR (
-                 lyrics_status = 'not_found'
-                 AND (
-                   lyrics_fetched_at IS NULL
-                   OR datetime(lyrics_fetched_at) < datetime('now', ? || ' days')
-                 )
-               )
-             )""",
-        (f"-{retry_not_found_after_days}",),
-    ).fetchall()
-    return [_row_to_track(r) for r in rows]
-
-
-def get_tracks_to_enrich_artwork(
-    conn: sqlite3.Connection, retry_not_found_after_days: int
-) -> list[Track]:
-    rows = conn.execute(
-        """SELECT * FROM tracks
-           WHERE download_status = 'completed'
-             AND file_status = 'available'
-             AND (
-               artwork_status = 'not_fetched'
-               OR (
-                 artwork_status = 'not_found'
-                 AND (
-                   artwork_fetched_at IS NULL
-                   OR datetime(artwork_fetched_at) < datetime('now', ? || ' days')
-                 )
-               )
-             )""",
-        (f"-{retry_not_found_after_days}",),
-    ).fetchall()
-    return [_row_to_track(r) for r in rows]
 
 
 def get_tracks_without_lyrics(conn: sqlite3.Connection) -> list[Track]:

@@ -1,7 +1,7 @@
 # tests/test_api.py
 import json
 from unittest.mock import MagicMock, patch
-from src.database.database import init_db, insert_track, update_lyrics_status, get_all_tracks
+from src.database.database import init_db, insert_track, set_enrichment_status, get_all_tracks
 from src.database.config_manager import set_setting
 from src.models.track import Track
 from src.models.playlist import Playlist

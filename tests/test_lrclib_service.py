@@ -3,7 +3,7 @@ import threading
 import pytest
 from datetime import datetime
 from unittest.mock import patch, MagicMock
-from src.database.database import init_db, insert_track, get_track, update_lyrics_status, update_track_status
+from src.database.database import init_db, insert_track, get_track, set_enrichment_status, update_track_status
 from src.models.enums import LyricsStatus
 from src.models.track import Track
 from src.services.lrclib_service import LRCLibService
@@ -249,7 +249,7 @@ def test_fetch_missing_only_processes_not_fetched(db_conn):
     init_db(db_conn)
     id1 = _make_track(db_conn, title="A")
     id2 = _make_track(db_conn, title="B")
-    update_lyrics_status(db_conn, id2, "synchronized")
+    set_enrichment_status(db_conn, id2, "lyrics", "synchronized")
 
     processed = []
 
@@ -399,7 +399,7 @@ def test_fetch_missing_running_flag_cleared_after_completion(db_conn):
 def test_get_lyrics_returns_embedded_text_and_status(db_conn):
     init_db(db_conn)
     track_id = _make_track(db_conn)
-    update_lyrics_status(db_conn, track_id, "synchronized")
+    set_enrichment_status(db_conn, track_id, "lyrics", "synchronized")
 
     with patch("src.services.lrclib_service.AudioFile") as MockAF:
         MockAF.return_value.get_lyrics.return_value = "[00:01.00] I'm a creep"
@@ -496,7 +496,7 @@ def test_fetch_missing_lyrics_uses_retry_not_found_query(db_conn, mocker):
     init_db(db_conn)
 
     mock_query = mocker.patch(
-        "src.services.lrclib_service.get_tracks_to_enrich_lyrics",
+        "src.services.lrclib_service.get_tracks_to_enrich",
         return_value=[],
     )
 
@@ -504,7 +504,7 @@ def test_fetch_missing_lyrics_uses_retry_not_found_query(db_conn, mocker):
     # Call _run_batch directly to avoid threading in tests
     svc._run_batch(retry_not_found_after_days=14)
 
-    mock_query.assert_called_once_with(db_conn, retry_not_found_after_days=14)
+    mock_query.assert_called_once_with(db_conn, kind="lyrics", retry_not_found_after_days=14)
 
 
 def test_run_batch_emits_enrichment_lyrics_started(db_conn, mocker):

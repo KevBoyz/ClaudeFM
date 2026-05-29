@@ -1,7 +1,7 @@
 import sqlite3
 import threading
 
-from src.database.database import get_tracks_to_enrich_artwork
+from src.database.database import get_tracks_to_enrich
 from src.database.config_manager import get_setting
 from src.models.enums import ArtworkStatus
 from src.utils.logger import get_logger
@@ -30,7 +30,7 @@ class EnrichmentScheduler:
 
     def _run_artwork_batch(self) -> None:
         days = int(get_setting(self._conn, "enrich_retry_not_found_days") or "7")
-        tracks = get_tracks_to_enrich_artwork(self._conn, retry_not_found_after_days=days)
+        tracks = get_tracks_to_enrich(self._conn, kind="artwork", retry_not_found_after_days=days)
         event_bus.emit("enrichment_artwork_started", {"total": len(tracks)})
         counters = {"embedded": 0, "not_found": 0, "errors": 0}
         for track in tracks:
