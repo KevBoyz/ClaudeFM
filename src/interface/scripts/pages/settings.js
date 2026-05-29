@@ -195,20 +195,24 @@ const settingsPage = (() => {
         const oldFolder = _settings.download_folder || '';
         const newFolder = document.getElementById('set-folder').value.trim();
         const fmt = document.querySelector('[name=fmt]:checked')?.value || 'm4a';
-        await Promise.all([
-          api.save_setting('lastfm_api_key',       document.getElementById('set-apikey').value.trim()),
-          api.save_setting('download_folder',       newFolder),
-          api.save_setting('audio_format',          fmt),
-          api.save_setting('auto_fetch_lyrics',     document.getElementById('set-autolyr').checked ? 'true' : 'false'),
-          api.save_setting('auto_fetch_artwork',    document.getElementById('set-autoart').checked ? 'true' : 'false'),
-          api.save_setting('search_results_limit',  document.getElementById('set-limit').value),
-          api.save_setting('cache_enabled',         document.getElementById('set-cache').checked ? 'true' : 'false'),
-          api.save_setting('theme',                 document.getElementById('set-theme').value),
-          api.save_setting('enrich_repeat_lyrics',        document.getElementById('set-enrich-repeat-lyrics').checked ? 'true' : 'false'),
-          api.save_setting('enrich_repeat_artwork',       document.getElementById('set-enrich-repeat-artwork').checked ? 'true' : 'false'),
-          api.save_setting('enrich_interval_days',        document.getElementById('set-enrich-interval').value),
-          api.save_setting('enrich_retry_not_found_days', document.getElementById('set-enrich-retry-days').value),
-        ]);
+        // pywebview's IPC bridge does not support concurrent calls — save sequentially.
+        const saves = [
+          ['lastfm_api_key',               document.getElementById('set-apikey').value.trim()],
+          ['download_folder',              newFolder],
+          ['audio_format',                 fmt],
+          ['auto_fetch_lyrics',            document.getElementById('set-autolyr').checked ? 'true' : 'false'],
+          ['auto_fetch_artwork',           document.getElementById('set-autoart').checked ? 'true' : 'false'],
+          ['search_results_limit',         document.getElementById('set-limit').value],
+          ['cache_enabled',               document.getElementById('set-cache').checked ? 'true' : 'false'],
+          ['theme',                        document.getElementById('set-theme').value],
+          ['enrich_repeat_lyrics',         document.getElementById('set-enrich-repeat-lyrics').checked ? 'true' : 'false'],
+          ['enrich_repeat_artwork',        document.getElementById('set-enrich-repeat-artwork').checked ? 'true' : 'false'],
+          ['enrich_interval_days',         document.getElementById('set-enrich-interval').value],
+          ['enrich_retry_not_found_days',  document.getElementById('set-enrich-retry-days').value],
+        ];
+        for (const [key, value] of saves) {
+          await api.save_setting(key, value);
+        }
         ThemeLoader.load(document.getElementById('set-theme').value);
         _settings.download_folder = newFolder;
         if (newFolder && newFolder !== oldFolder) {

@@ -348,8 +348,11 @@ class ClaudeFMAPI:
         try:
             set_setting(self._conn, key, value)
             self._get_enrichment().apply_settings()
+            display = "***" if key == "lastfm_api_key" else value
+            log.info(f"Setting saved: {key} = {display}")
             return _ok()
         except Exception as e:
+            log.error(f"Failed to save setting '{key}': {e}", exc_info=True)
             return _err(str(e))
 
     def rescan_library(self) -> str:

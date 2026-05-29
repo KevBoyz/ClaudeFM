@@ -19,7 +19,7 @@ const player = (() => {
       const { position } = await api.get_position();
       state.position = position;
       document.dispatchEvent(new CustomEvent('player:tick', { detail: { position } }));
-    }, 1000);
+    }, 250);
   }
 
   function _stopTick() {

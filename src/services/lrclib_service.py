@@ -39,8 +39,37 @@ class LyricsEmbedder:
         AudioFile(Path(file_path)).set_lyrics(state=state, lyrics=lyrics)
 
     def read(self, file_path: str) -> str | None:
-        """Read embedded lyrics text from the file's tags, or None if absent."""
-        return AudioFile(Path(file_path)).get_lyrics()
+        """Read embedded lyrics text from the file's tags, or None if absent.
+
+        For MP3 files, SYLT is read directly via mutagen to work around a
+        formatting bug in lrcup's dump_lyrics: it strips trailing zeros before
+        left-padding, so 50 ms becomes ".50" instead of ".050", which the LRC
+        parser then misreads as 500 ms.
+        """
+        path = Path(file_path)
+        if path.suffix.lower() == ".mp3":
+            return self._read_mp3_lyrics(path)
+        return AudioFile(path).get_lyrics()
+
+    @staticmethod
+    def _read_mp3_lyrics(path: Path) -> str | None:
+        from mutagen.mp3 import MP3
+        from mutagen.id3 import SYLT, USLT
+
+        f = MP3(path)
+        for tag, value in f.items():
+            if isinstance(value, SYLT):
+                lines = []
+                for text, time_ms in value.text:
+                    minutes = time_ms // 60000
+                    remaining = time_ms % 60000
+                    seconds = remaining // 1000
+                    ms = remaining % 1000
+                    lines.append(f"[{minutes:02d}:{seconds:02d}.{ms:03d}] {text}")
+                return "\n".join(lines)
+            if isinstance(value, USLT):
+                return str(value)
+        return None
 
 
 class LRCLibService:
