@@ -103,7 +103,8 @@ class LastFMService:
             net = self._get_network()
             album_obj = net.get_track(artist, title).get_album()
             name = album_obj.get_name() if album_obj else None
-            self._cache.set(key, [name] if name else [])
+            if name:
+                self._cache.set(key, [name])
             return name
         except Exception as e:
             log.debug(f"get_track_album {artist!r}/{title!r}: {e}")

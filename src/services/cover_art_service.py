@@ -97,16 +97,16 @@ class CoverArtService:
         try:
             image_data = self._fetcher.fetch_bytes(url)
         except Exception as e:
+            # Transient failure — leave as NOT_FETCHED so next batch retries without cooldown.
             log.warning(f"Failed to download cover art for track {track_id}: {e}")
-            update_artwork_status(self._conn, track_id, ArtworkStatus.NOT_FOUND, datetime.now())
-            return ArtworkStatus.NOT_FOUND
+            return ArtworkStatus.NOT_FETCHED
 
         try:
             self._embedder.embed(track.file_path, image_data)
         except Exception as e:
+            # Transient failure — same reasoning: don't penalise with NOT_FOUND cooldown.
             log.warning(f"Failed to embed cover art for track {track_id}: {e}")
-            update_artwork_status(self._conn, track_id, ArtworkStatus.NOT_FOUND, datetime.now())
-            return ArtworkStatus.NOT_FOUND
+            return ArtworkStatus.NOT_FETCHED
 
         update_artwork_status(self._conn, track_id, ArtworkStatus.EMBEDDED, datetime.now())
         return ArtworkStatus.EMBEDDED

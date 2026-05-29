@@ -185,7 +185,8 @@ def test_service_returns_false_when_no_file_path(db_conn):
     mock_lastfm.get_cover_image_url.assert_not_called()
 
 
-def test_service_returns_false_on_fetch_error(db_conn):
+def test_service_returns_not_fetched_on_download_error(db_conn):
+    # Transient network error → NOT_FETCHED so next batch retries without 7-day cooldown.
     init_db(db_conn)
     tid = insert_track(db_conn, Track(
         title="T", artist="A", download_status="completed",
@@ -199,11 +200,12 @@ def test_service_returns_false_on_fetch_error(db_conn):
     svc._fetcher.fetch_bytes.side_effect = OSError("network error")
     svc._embedder = MagicMock()
 
-    assert svc.fetch_and_embed(tid) == "not_found"
+    assert svc.fetch_and_embed(tid) == "not_fetched"
     svc._embedder.embed.assert_not_called()
 
 
-def test_service_returns_false_on_embed_error(db_conn):
+def test_service_returns_not_fetched_on_embed_error(db_conn):
+    # Transient embed error → NOT_FETCHED so next batch retries without 7-day cooldown.
     init_db(db_conn)
     tid = insert_track(db_conn, Track(
         title="T", artist="A", download_status="completed",
@@ -218,7 +220,7 @@ def test_service_returns_false_on_embed_error(db_conn):
     svc._embedder = MagicMock()
     svc._embedder.embed.side_effect = Exception("mutagen error")
 
-    assert svc.fetch_and_embed(tid) == "not_found"
+    assert svc.fetch_and_embed(tid) == "not_fetched"
 
 
 def test_service_fetch_and_embed_async_runs_in_thread(db_conn, mocker):
@@ -273,7 +275,8 @@ def test_fetch_and_embed_writes_not_found_when_no_url(db_conn):
     assert track.artwork_fetched_at is not None
 
 
-def test_fetch_and_embed_writes_not_found_on_download_error(db_conn):
+def test_fetch_and_embed_returns_not_fetched_on_download_error(db_conn):
+    # Transient download error must not mark NOT_FOUND — track must remain retryable.
     init_db(db_conn)
     tid = insert_track(db_conn, Track(
         title="Song", artist="Artist", album="Album",
@@ -290,9 +293,8 @@ def test_fetch_and_embed_writes_not_found_on_download_error(db_conn):
     result = svc.fetch_and_embed(tid)
 
     track = get_track(db_conn, tid)
-    assert result == "not_found"
-    assert track.artwork_status == "not_found"
-    assert track.artwork_fetched_at is not None
+    assert result == "not_fetched"
+    assert track.artwork_status == "not_fetched"
 
 
 def test_read_bytes_returns_bytes_from_m4a(tmp_path, mocker):
