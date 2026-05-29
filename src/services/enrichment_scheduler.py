@@ -58,14 +58,14 @@ class EnrichmentScheduler:
             self._run_batch("lyrics", self._lrclib.fetch_and_embed)
         finally:
             self._lyrics_running.clear()
-        self._reschedule("lyrics")
+            self._reschedule("lyrics")
 
     def _run_artwork_batch(self) -> None:
         try:
             self._run_batch("artwork", self._cover_art.fetch_and_embed)
         finally:
             self._artwork_running.clear()
-        self._reschedule("artwork")
+            self._reschedule("artwork")
 
     def _run_batch(self, kind: str, fetch_fn) -> None:
         days = int(get_setting(self._conn, "enrich_retry_not_found_days") or "7")
