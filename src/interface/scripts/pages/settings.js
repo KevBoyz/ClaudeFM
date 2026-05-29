@@ -68,6 +68,54 @@ const settingsPage = (() => {
       </div>
 
       <div class="settings-section">
+        <h2>Enrichment</h2>
+        <div class="settings-row">
+          <span class="settings-label">Run lyrics search now</span>
+          <div class="settings-field">
+            <button class="btn btn-ghost" id="set-enrich-run-lyrics">Run now</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Run artwork search now</span>
+          <div class="settings-field">
+            <button class="btn btn-ghost" id="set-enrich-run-artwork">Run now</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Auto-repeat lyrics search</span>
+          <div class="settings-field">
+            <label class="settings-toggle">
+              <input type="checkbox" id="set-enrich-repeat-lyrics" ${_settings.enrich_repeat_lyrics==='true'?'checked':''}>
+              <span class="settings-toggle-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Auto-repeat artwork search</span>
+          <div class="settings-field">
+            <label class="settings-toggle">
+              <input type="checkbox" id="set-enrich-repeat-artwork" ${_settings.enrich_repeat_artwork==='true'?'checked':''}>
+              <span class="settings-toggle-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Repeat interval (days)</span>
+          <div class="settings-field">
+            <input type="number" id="set-enrich-interval" min="1" max="365"
+              value="${parseInt(_settings.enrich_interval_days||'1')}" style="width:80px">
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Skip not-found tracks for (days)</span>
+          <div class="settings-field">
+            <input type="number" id="set-enrich-retry-days" min="1" max="365"
+              value="${parseInt(_settings.enrich_retry_not_found_days||'7')}" style="width:80px">
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <h2>Search</h2>
         <div class="settings-row">
           <span class="settings-label">Results limit</span>
@@ -118,6 +166,28 @@ const settingsPage = (() => {
       btn.disabled = false; btn.textContent = 'Test Connection';
     });
 
+    document.getElementById('set-enrich-run-lyrics').addEventListener('click', async () => {
+      const btn = document.getElementById('set-enrich-run-lyrics');
+      btn.disabled = true;
+      try {
+        await api.run_enrichment_lyrics();
+      } catch (e) {
+        toast.show('Failed to start lyrics search: ' + e.message, 'error', 4000);
+      }
+      btn.disabled = false;
+    });
+
+    document.getElementById('set-enrich-run-artwork').addEventListener('click', async () => {
+      const btn = document.getElementById('set-enrich-run-artwork');
+      btn.disabled = true;
+      try {
+        await api.run_enrichment_artwork();
+      } catch (e) {
+        toast.show('Failed to start artwork search: ' + e.message, 'error', 4000);
+      }
+      btn.disabled = false;
+    });
+
     document.getElementById('set-save').addEventListener('click', async () => {
       const btn = document.getElementById('set-save');
       btn.disabled = true;
@@ -134,6 +204,10 @@ const settingsPage = (() => {
           api.save_setting('search_results_limit',  document.getElementById('set-limit').value),
           api.save_setting('cache_enabled',         document.getElementById('set-cache').checked ? 'true' : 'false'),
           api.save_setting('theme',                 document.getElementById('set-theme').value),
+          api.save_setting('enrich_repeat_lyrics',        document.getElementById('set-enrich-repeat-lyrics').checked ? 'true' : 'false'),
+          api.save_setting('enrich_repeat_artwork',       document.getElementById('set-enrich-repeat-artwork').checked ? 'true' : 'false'),
+          api.save_setting('enrich_interval_days',        document.getElementById('set-enrich-interval').value),
+          api.save_setting('enrich_retry_not_found_days', document.getElementById('set-enrich-retry-days').value),
         ]);
         ThemeLoader.load(document.getElementById('set-theme').value);
         _settings.download_folder = newFolder;
