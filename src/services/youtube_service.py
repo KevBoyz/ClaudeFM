@@ -4,6 +4,7 @@ import sqlite3
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 
 import imageio_ffmpeg
@@ -186,6 +187,7 @@ class YouTubeService:
                 file_path=out_path,
                 youtube_url=f"ytsearch:{query}",
                 duration=duration,
+                date_downloaded=datetime.now(),
             )
             event_bus.emit("download_complete", {"track_id": track_id})
             if on_complete:

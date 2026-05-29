@@ -1,5 +1,6 @@
 import sqlite3
 import threading
+from datetime import datetime
 from pathlib import Path
 
 import mutagen
@@ -98,6 +99,7 @@ def full_scan(conn: sqlite3.Connection, folders: list[str]) -> int:
                 audio_format=meta["audio_format"],
                 download_status=DownloadStatus.COMPLETED,
                 file_status=FileStatus.AVAILABLE,
+                date_downloaded=datetime.now(),
             )
             insert_track(conn, track)
             added += 1

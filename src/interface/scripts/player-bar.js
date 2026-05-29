@@ -73,7 +73,27 @@ const PlayerBar = (() => {
     icon.textContent = t?.lyrics_status === 'instrumental' ? '🎸'
                      : has ? '🎵' : '—';
     icon.className = 'player-lyrics-icon' + (has ? ' has-lyrics' : '');
+    _loadThumb(t);
     _tick(s.position, s.duration);
+  }
+
+  async function _loadThumb(track) {
+    const thumb = document.querySelector('.player-thumb');
+    if (!thumb) return;
+    if (!track || track.artwork_status !== 'embedded') {
+      thumb.innerHTML = '♪';
+      return;
+    }
+    try {
+      const result = await api.get_track_artwork(track.id);
+      if (result?.data?.data_url) {
+        thumb.innerHTML = `<img src="${result.data.data_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:4px">`;
+      } else {
+        thumb.innerHTML = '♪';
+      }
+    } catch (_) {
+      thumb.innerHTML = '♪';
+    }
   }
 
   function _tick(position, duration) {

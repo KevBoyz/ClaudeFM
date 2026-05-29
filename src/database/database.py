@@ -160,6 +160,7 @@ def update_track_status(
     file_path: str | None = None,
     youtube_url: str | None = None,
     duration: int | None = None,
+    date_downloaded: datetime | None = None,
 ) -> None:
     """Update any subset of track fields; keyword-only args prevent positional mistakes.
 
@@ -174,6 +175,7 @@ def update_track_status(
         ("file_path", file_path),
         ("youtube_url", youtube_url),
         ("duration", duration),
+        ("date_downloaded", date_downloaded.isoformat() if date_downloaded else None),
     ]:
         if val is not None:
             fields.append(f"{col}=?")
