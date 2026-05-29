@@ -50,7 +50,8 @@ class FFmpegDecoder:
             cmd += ["-ss", str(self._seek_position)]
         cmd += ["-i", self._file_path, "-f", "s16le", "-ar",
                 str(_SAMPLE_RATE), "-ac", str(_CHANNELS), "-"]
-        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self._proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         return self
 
     def __exit__(self, *_) -> None:
@@ -200,7 +201,8 @@ class PlayerService:
         self._paused = False
         self._current_file = file_path
         self._thread = threading.Thread(
-            target=self._playback_thread, args=(file_path, seek_position), daemon=True
+            target=self._playback_thread, args=(
+                file_path, seek_position), daemon=True
         )
         self._thread.start()
 
@@ -259,7 +261,8 @@ class PlayerService:
                         chunk = decoder.read_chunk()
                         if not chunk:
                             break
-                        output.write(apply_volume(chunk, vol) if vol != 1.0 else chunk)
+                        output.write(apply_volume(chunk, vol)
+                                     if vol != 1.0 else chunk)
                         with self._lock:
                             self._position += _CHUNK_FRAMES / _SAMPLE_RATE
 

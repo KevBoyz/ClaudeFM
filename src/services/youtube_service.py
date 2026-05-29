@@ -73,7 +73,8 @@ class YtDlpDownloader:
 
         def progress_hook(d):
             if d["status"] == "downloading":
-                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 1
+                total = d.get("total_bytes") or d.get(
+                    "total_bytes_estimate") or 1
                 downloaded = d.get("downloaded_bytes", 0)
                 on_progress(int(downloaded / total * 100))
 
@@ -112,7 +113,8 @@ class YtDlpDownloader:
             filename = ydl.prepare_filename(info)
             final = Path(filename).with_suffix(f".{audio_format}")
             if not final.exists():
-                raise FileNotFoundError(f"Download completed but file not found: {final}")
+                raise FileNotFoundError(
+                    f"Download completed but file not found: {final}")
             return str(final)
 
 
@@ -141,7 +143,8 @@ class YouTubeService:
         """
         with self._active_lock:
             if track_id in self._active:
-                log.debug(f"queue_download: track {track_id} already active, skipping")
+                log.debug(
+                    f"queue_download: track {track_id} already active, skipping")
                 return
             self._active.add(track_id)
         self._executor.submit(self._run_download, track_id, on_complete)
@@ -171,14 +174,17 @@ class YouTubeService:
             if on_complete:
                 on_complete(track_id)
             return
-        update_track_status(self._conn, track_id, download_status=DownloadStatus.DOWNLOADING)
-        event_bus.emit("download_progress", {"track_id": track_id, "percent": 0})
+        update_track_status(self._conn, track_id,
+                            download_status=DownloadStatus.DOWNLOADING)
+        event_bus.emit("download_progress", {
+                       "track_id": track_id, "percent": 0})
         try:
             download_dir = get_setting(self._conn, "download_folder")
             audio_format = get_setting(self._conn, "audio_format")
             query = f"{track.artist} - {track.title}"
             base_name = sanitize_filename(f"{track.artist} - {track.title}")
-            out_path = self._run_ytdlp(query, download_dir, audio_format, track_id, base_name)
+            out_path = self._run_ytdlp(
+                query, download_dir, audio_format, track_id, base_name)
             duration = _read_duration(out_path)
             update_track_status(
                 self._conn, track_id,
@@ -193,17 +199,20 @@ class YouTubeService:
             if on_complete:
                 on_complete(track_id)
         except Exception as e:
-            log.error(f"Download failed for track {track_id}: {e}", exc_info=True)
+            log.error(
+                f"Download failed for track {track_id}: {e}", exc_info=True)
             update_track_status(
                 self._conn, track_id,
                 download_status=DownloadStatus.FAILED,
                 download_error=str(e),
             )
-            event_bus.emit("download_error", {"track_id": track_id, "message": str(e)})
+            event_bus.emit("download_error", {
+                           "track_id": track_id, "message": str(e)})
 
     def _run_ytdlp(self, query: str, download_dir: str, audio_format: str, track_id: int, base_name: str) -> str:
         """Delegate to YtDlpDownloader, wiring ``download_progress`` events via the on_progress callback."""
         return self._downloader.download(
             query, download_dir, audio_format, base_name,
-            on_progress=lambda pct: event_bus.emit("download_progress", {"track_id": track_id, "percent": pct}),
+            on_progress=lambda pct: event_bus.emit(
+                "download_progress", {"track_id": track_id, "percent": pct}),
         )

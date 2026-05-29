@@ -50,11 +50,11 @@ class LastFMService:
             return []
         key = self._cache.key("search", search_type, query)
         if search_type == SearchType.ARTIST:
-            fetch = lambda: self._search_artists(self._get_network(), query, limit)
+            def fetch(): return self._search_artists(self._get_network(), query, limit)
         elif search_type == SearchType.TRACK:
-            fetch = lambda: self._search_tracks(self._get_network(), query, limit)
+            def fetch(): return self._search_tracks(self._get_network(), query, limit)
         else:
-            fetch = lambda: self._search_albums(self._get_network(), query, limit)
+            def fetch(): return self._search_albums(self._get_network(), query, limit)
         return self._cached_fetch(key, fetch, "Last.fm search")[:limit]
 
     def _search_artists(self, net, query: str, limit: int) -> list[dict]:
@@ -85,7 +85,8 @@ class LastFMService:
         return self._cached_fetch(
             key,
             lambda: [
-                {"type": "track", "title": t.get_name(), "artist": artist_name, "album": album_title}
+                {"type": "track", "title": t.get_name(), "artist": artist_name,
+                 "album": album_title}
                 for t in self._get_network().get_album(artist_name, album_title).get_tracks()
             ],
             "get_album_tracks",
@@ -116,7 +117,8 @@ class LastFMService:
             return None
         try:
             net = self._get_network()
-            url = net.get_album(artist, album).get_cover_image(pylast.SIZE_EXTRA_LARGE)
+            url = net.get_album(artist, album).get_cover_image(
+                pylast.SIZE_EXTRA_LARGE)
             return url or None
         except Exception as e:
             log.warning(f"get_cover_image_url {artist!r}/{album!r}: {e}")
