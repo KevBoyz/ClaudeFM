@@ -1,6 +1,8 @@
 const Topbar = (() => {
   const _lyricsFetching = {};
   const _lyricsHistory  = [];
+  const _lyricsEnriching  = { active: false, total: 0, done: 0 };
+  const _artworkEnriching = { active: false, total: 0, done: 0 };
 
   const ROUTES = [
     { label: 'Home',      route: 'home' },
@@ -41,7 +43,10 @@ const Topbar = (() => {
 
   function _updateBadge() {
     const countEl = document.getElementById('dl-count');
-    const total = downloads.activeCount() + Object.keys(_lyricsFetching).length;
+    const total = downloads.activeCount()
+      + Object.keys(_lyricsFetching).length
+      + (_lyricsEnriching.active  ? 1 : 0)
+      + (_artworkEnriching.active ? 1 : 0);
     if (!countEl) return;
     const panel = document.getElementById('download-panel');
     const panelOpen = panel && !panel.classList.contains('hidden');
@@ -108,13 +113,35 @@ const Topbar = (() => {
       </div>`;
     }).join('');
 
-    const hasActivity = activeRows || histRows || lyricsActiveRows || lyricsHistRows;
+    const lyricsEnrichRow = _lyricsEnriching.active
+      ? `<div class="download-row">
+           <div class="download-row-info">
+             <div class="download-row-title">Enriching lyrics</div>
+             <div class="download-row-sub">${_lyricsEnriching.done}/${_lyricsEnriching.total} tracks</div>
+           </div>
+           <span style="font-size:.8rem;color:var(--color-text_secondary)">Running...</span>
+         </div>`
+      : '';
+
+    const artworkEnrichRow = _artworkEnriching.active
+      ? `<div class="download-row">
+           <div class="download-row-info">
+             <div class="download-row-title">Enriching artwork</div>
+             <div class="download-row-sub">${_artworkEnriching.done}/${_artworkEnriching.total} tracks</div>
+           </div>
+           <span style="font-size:.8rem;color:var(--color-text_secondary)">Running...</span>
+         </div>`
+      : '';
+
+    const hasActivity = activeRows || histRows || lyricsActiveRows || lyricsHistRows || lyricsEnrichRow || artworkEnrichRow;
     panel.innerHTML = `
-      ${activeRows      ? `<div class="download-panel-section">Downloading</div>${activeRows}` : ''}
-      ${lyricsActiveRows? `<div class="download-panel-section">Fetching lyrics</div>${lyricsActiveRows}` : ''}
-      ${histRows        ? `<div class="download-panel-section">Downloads</div>${histRows}` : ''}
-      ${lyricsHistRows  ? `<div class="download-panel-section">Lyrics</div>${lyricsHistRows}` : ''}
-      ${!hasActivity    ? '<div style="padding:16px;color:var(--color-text_secondary);font-size:.875rem">No activity</div>' : ''}`;
+      ${activeRows       ? `<div class="download-panel-section">Downloading</div>${activeRows}` : ''}
+      ${lyricsActiveRows ? `<div class="download-panel-section">Fetching lyrics</div>${lyricsActiveRows}` : ''}
+      ${lyricsEnrichRow  ? `<div class="download-panel-section">Enriching lyrics</div>${lyricsEnrichRow}` : ''}
+      ${artworkEnrichRow ? `<div class="download-panel-section">Enriching artwork</div>${artworkEnrichRow}` : ''}
+      ${histRows         ? `<div class="download-panel-section">Downloads</div>${histRows}` : ''}
+      ${lyricsHistRows   ? `<div class="download-panel-section">Lyrics</div>${lyricsHistRows}` : ''}
+      ${!hasActivity     ? '<div style="padding:16px;color:var(--color-text_secondary);font-size:.875rem">No activity</div>' : ''}`;
   }
 
   document.addEventListener('lyrics:fetch_start', e => {
@@ -125,6 +152,34 @@ const Topbar = (() => {
     delete _lyricsFetching[e.detail.track_id];
     _lyricsHistory.unshift(e.detail);
     _updateBadge();
+  });
+
+  document.addEventListener('claudefm:event', e => {
+    const ev = e.detail;
+    if (ev.type === 'enrichment_lyrics_started') {
+      _lyricsEnriching.active = true;
+      _lyricsEnriching.total  = ev.total || 0;
+      _lyricsEnriching.done   = 0;
+      _updateBadge();
+    } else if (ev.type === 'lyrics_fetch_complete') {
+      _lyricsEnriching.active = false;
+      _updateBadge();
+    } else if (ev.type === 'enrichment_artwork_started') {
+      _artworkEnriching.active = true;
+      _artworkEnriching.total  = ev.total || 0;
+      _artworkEnriching.done   = 0;
+      _updateBadge();
+    } else if (ev.type === 'enrichment_artwork_progress') {
+      _artworkEnriching.done = Math.min(_artworkEnriching.done + 1, _artworkEnriching.total);
+      _updateBadge();
+    } else if (ev.type === 'enrichment_artwork_complete') {
+      _artworkEnriching.active = false;
+      const { embedded = 0, not_found = 0, errors = 0 } = ev;
+      if (embedded + not_found + errors > 0) {
+        toast.show(`Artwork: ${embedded} embedded, ${not_found} not found${errors ? `, ${errors} errors` : ''}`, 'info', 5000);
+      }
+      _updateBadge();
+    }
   });
 
   document.addEventListener('click', e => {
