@@ -27,13 +27,14 @@ def _get_tag(tags: dict, *keys: str, default: str) -> str:
 
 
 def _extract_metadata(path: Path) -> dict:
-    """Read title, artist, duration, and format from an audio file's tags via mutagen.
+    """Read title, artist, album, duration, and format from an audio file's tags via mutagen.
 
     Falls back to the filename stem / "Unknown Artist" if tags are missing or
     mutagen raises. Returns a plain dict so callers don't import mutagen.
     """
     title = path.stem
     artist = _UNKNOWN_ARTIST
+    album = None
     duration = None
     try:
         meta = mutagen.File(path)
@@ -42,9 +43,11 @@ def _extract_metadata(path: Path) -> dict:
             tags = meta.tags or {}
             title = _get_tag(tags, "TIT2", "title", default=title)
             artist = _get_tag(tags, "TPE1", "artist", default=artist)
+            raw_album = _get_tag(tags, "TALB", "album", default="")
+            album = raw_album or None
     except Exception as e:
         log.debug(f"mutagen failed for {path}: {e}")
-    return {"title": title, "artist": artist, "duration": duration, "audio_format": path.suffix.lstrip(".")}
+    return {"title": title, "artist": artist, "album": album, "duration": duration, "audio_format": path.suffix.lstrip(".")}
 
 
 def quick_scan(conn: sqlite3.Connection) -> None:
@@ -89,6 +92,7 @@ def full_scan(conn: sqlite3.Connection, folders: list[str]) -> int:
             track = Track(
                 title=meta["title"],
                 artist=meta["artist"],
+                album=meta["album"],
                 duration=meta["duration"],
                 file_path=path_str,
                 audio_format=meta["audio_format"],

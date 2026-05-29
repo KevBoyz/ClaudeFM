@@ -185,6 +185,11 @@ def update_track_status(
     conn.commit()
 
 
+def update_track_album(conn: sqlite3.Connection, track_id: int, album: str) -> None:
+    conn.execute("UPDATE tracks SET album=? WHERE id=?", (album, track_id))
+    conn.commit()
+
+
 def update_lyrics_status(conn: sqlite3.Connection, track_id: int, status: str) -> None:
     conn.execute("UPDATE tracks SET lyrics_status=? WHERE id=?",
                  (status, track_id))

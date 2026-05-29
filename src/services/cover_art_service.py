@@ -7,7 +7,7 @@ from pathlib import Path
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.id3 import ID3, APIC, ID3NoHeaderError
 
-from src.database.database import get_track, update_artwork_status
+from src.database.database import get_track, update_artwork_status, update_track_album
 from src.models.enums import ArtworkStatus
 from src.utils.logger import get_logger
 
@@ -81,9 +81,16 @@ class CoverArtService:
         if not track or not track.file_path:
             return ArtworkStatus.NOT_FOUND
 
-        url = self._lastfm.get_cover_image_url(track.artist, track.album)
+        album = track.album
+        if not album:
+            album = self._lastfm.get_track_album(track.artist, track.title)
+            if album:
+                log.debug(f"Resolved album for track {track_id} via Last.fm: {album!r}")
+                update_track_album(self._conn, track_id, album)
+
+        url = self._lastfm.get_cover_image_url(track.artist, album)
         if not url:
-            log.debug(f"No cover art URL for track {track_id} ({track.artist!r}/{track.album!r})")
+            log.debug(f"No cover art URL for track {track_id} ({track.artist!r}/{album!r})")
             update_artwork_status(self._conn, track_id, ArtworkStatus.NOT_FOUND, datetime.now())
             return ArtworkStatus.NOT_FOUND
 

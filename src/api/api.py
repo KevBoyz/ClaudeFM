@@ -255,28 +255,33 @@ class ClaudeFMAPI:
         return _ok()
 
     def next_track(self) -> str:
-        """Advance the queue and play the next track; emits ``queue_ended`` if the queue is exhausted."""
+        """Advance the queue and play the next track; skips unplayable tracks (failed/missing).
+        Emits ``queue_ended`` if the queue is exhausted."""
         try:
-            next_id = self._player.queue.next_id()
-            if next_id is None:
-                event_bus.emit("queue_ended", {})
-                return json.dumps({"success": True, "ended": True})
-            track = get_track(self._conn, next_id)
-            if track and track.file_path:
-                self._player.play(track.file_path)
-            return json.dumps({"success": True, "track_id": next_id})
+            while True:
+                next_id = self._player.queue.next_id()
+                if next_id is None:
+                    event_bus.emit("queue_ended", {})
+                    return json.dumps({"success": True, "ended": True})
+                track = get_track(self._conn, next_id)
+                if track and track.file_path and track.file_status == "available":
+                    self._player.play(track.file_path)
+                    return json.dumps({"success": True, "track_id": next_id})
+                log.debug(f"Skipping unplayable track {next_id} (status={getattr(track, 'file_status', None)})")
         except Exception as e:
             return _err(str(e))
 
     def prev_track(self) -> str:
         try:
-            prev_id = self._player.queue.prev_id()
-            if prev_id is None:
-                return _ok()
-            track = get_track(self._conn, prev_id)
-            if track and track.file_path:
-                self._player.play(track.file_path)
-            return json.dumps({"success": True, "track_id": prev_id})
+            while True:
+                prev_id = self._player.queue.prev_id()
+                if prev_id is None:
+                    return _ok()
+                track = get_track(self._conn, prev_id)
+                if track and track.file_path and track.file_status == "available":
+                    self._player.play(track.file_path)
+                    return json.dumps({"success": True, "track_id": prev_id})
+                log.debug(f"Skipping unplayable track {prev_id} going backwards (status={getattr(track, 'file_status', None)})")
         except Exception as e:
             return _err(str(e))
 

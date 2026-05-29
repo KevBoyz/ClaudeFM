@@ -91,6 +91,24 @@ class LastFMService:
             "get_album_tracks",
         )
 
+    def get_track_album(self, artist: str, title: str) -> str | None:
+        """Return the album name for a track from Last.fm, or None if unknown."""
+        if not self._api_key:
+            return None
+        key = self._cache.key("track_album", artist, title)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached[0] if cached else None
+        try:
+            net = self._get_network()
+            album_obj = net.get_track(artist, title).get_album()
+            name = album_obj.get_name() if album_obj else None
+            self._cache.set(key, [name] if name else [])
+            return name
+        except Exception as e:
+            log.debug(f"get_track_album {artist!r}/{title!r}: {e}")
+            return None
+
     def get_cover_image_url(self, artist: str, album: str | None = None) -> str | None:
         """Return extra-large cover image URL for an album, or None if album is unknown."""
         if not self._api_key or not album:

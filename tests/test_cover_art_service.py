@@ -138,14 +138,15 @@ def test_service_fetches_and_embeds_cover(db_conn):
     svc._embedder.embed.assert_called_once_with("/tmp/song.m4a", b'img')
 
 
-def test_service_uses_artist_only_when_no_album(db_conn):
+def test_service_resolves_album_via_lastfm_when_missing(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(
         title="Creep", artist="Radiohead",
         download_status="completed", file_status="available", file_path="/tmp/s.m4a",
     ))
     mock_lastfm = MagicMock()
-    mock_lastfm.get_cover_image_url.return_value = 'https://cdn.com/artist.jpg'
+    mock_lastfm.get_track_album.return_value = "Pablo Honey"
+    mock_lastfm.get_cover_image_url.return_value = 'https://cdn.com/album.jpg'
     svc = CoverArtService(db_conn, mock_lastfm)
     svc._fetcher = MagicMock()
     svc._fetcher.fetch_bytes.return_value = b'img'
@@ -153,21 +154,24 @@ def test_service_uses_artist_only_when_no_album(db_conn):
 
     svc.fetch_and_embed(tid)
 
-    mock_lastfm.get_cover_image_url.assert_called_once_with("Radiohead", None)
+    mock_lastfm.get_track_album.assert_called_once_with("Radiohead", "Creep")
+    mock_lastfm.get_cover_image_url.assert_called_once_with("Radiohead", "Pablo Honey")
 
 
-def test_service_returns_false_when_no_url(db_conn):
+def test_service_falls_back_to_none_album_when_lookup_fails(db_conn):
     init_db(db_conn)
     tid = insert_track(db_conn, Track(
         title="T", artist="A", download_status="completed",
         file_status="available", file_path="/tmp/s.m4a",
     ))
     mock_lastfm = MagicMock()
+    mock_lastfm.get_track_album.return_value = None
     mock_lastfm.get_cover_image_url.return_value = None
     svc = CoverArtService(db_conn, mock_lastfm)
     svc._embedder = MagicMock()
 
     assert svc.fetch_and_embed(tid) == "not_found"
+    mock_lastfm.get_cover_image_url.assert_called_once_with("A", None)
     svc._embedder.embed.assert_not_called()
 
 
@@ -188,6 +192,7 @@ def test_service_returns_false_on_fetch_error(db_conn):
         file_status="available", file_path="/tmp/s.m4a",
     ))
     mock_lastfm = MagicMock()
+    mock_lastfm.get_track_album.return_value = None
     mock_lastfm.get_cover_image_url.return_value = 'https://cdn.com/img.jpg'
     svc = CoverArtService(db_conn, mock_lastfm)
     svc._fetcher = MagicMock()
@@ -205,6 +210,7 @@ def test_service_returns_false_on_embed_error(db_conn):
         file_status="available", file_path="/tmp/s.m4a",
     ))
     mock_lastfm = MagicMock()
+    mock_lastfm.get_track_album.return_value = None
     mock_lastfm.get_cover_image_url.return_value = 'https://cdn.com/img.jpg'
     svc = CoverArtService(db_conn, mock_lastfm)
     svc._fetcher = MagicMock()
