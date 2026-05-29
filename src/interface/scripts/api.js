@@ -84,9 +84,11 @@ const api = (() => {
     remove_from_playlist:   (pid, tid)            => _call('remove_from_playlist', pid, tid),
 
     // Lyrics
-    fetch_lyrics:         (id)  => _call('fetch_lyrics', id),
-    fetch_missing_lyrics: ()    => _call('fetch_missing_lyrics'),
-    get_lyrics:           (id)  => _call('get_lyrics', id),
+    fetch_lyrics:           (id)  => _call('fetch_lyrics', id),
+    fetch_missing_lyrics:   ()    => _call('fetch_missing_lyrics'),
+    get_lyrics:             (id)  => _call('get_lyrics', id),
+    run_enrichment_lyrics:  ()    => _call('run_enrichment_lyrics'),
+    run_enrichment_artwork: ()    => _call('run_enrichment_artwork'),
 
     // Settings
     get_settings:             ()         => _call('get_settings'),

@@ -18,6 +18,7 @@ from src.services.youtube_service import YouTubeService
 from src.services.player_service import PlayerService
 from src.services.lrclib_service import LRCLibService
 from src.services.cover_art_service import CoverArtService
+from src.services.enrichment_scheduler import EnrichmentScheduler
 from src.utils.logger import get_logger
 from src.utils.event_bus import event_bus
 
@@ -50,6 +51,7 @@ class ClaudeFMAPI:
         self._lastfm: LastFMService | None = None
         self._lrclib: LRCLibService | None = None
         self._cover_art: CoverArtService | None = None
+        self._enrichment: EnrichmentScheduler | None = None
 
     def _get_youtube(self) -> YouTubeService:
         if self._youtube is None:
@@ -71,6 +73,13 @@ class ClaudeFMAPI:
         if self._cover_art is None:
             self._cover_art = CoverArtService(self._conn, self._get_lastfm())
         return self._cover_art
+
+    def _get_enrichment(self) -> EnrichmentScheduler:
+        if self._enrichment is None:
+            self._enrichment = EnrichmentScheduler(
+                self._conn, self._get_lrclib(), self._get_cover_art()
+            )
+        return self._enrichment
 
     def _post_download_hook(self):
         """Return a combined callback that runs artwork + lyrics fetching after a download.
@@ -332,6 +341,7 @@ class ClaudeFMAPI:
     def save_setting(self, key: str, value: str) -> str:
         try:
             set_setting(self._conn, key, value)
+            self._get_enrichment().apply_settings()
             return _ok()
         except Exception as e:
             return _err(str(e))
@@ -397,6 +407,22 @@ class ClaudeFMAPI:
             return _ok(result)
         except Exception as e:
             log.error(f"get_lyrics: {e}", exc_info=True)
+            return _err(str(e))
+
+    def run_enrichment_lyrics(self) -> str:
+        try:
+            self._get_enrichment().run_lyrics()
+            return _ok()
+        except Exception as e:
+            log.error(f"run_enrichment_lyrics: {e}", exc_info=True)
+            return _err(str(e))
+
+    def run_enrichment_artwork(self) -> str:
+        try:
+            self._get_enrichment().run_artwork()
+            return _ok()
+        except Exception as e:
+            log.error(f"run_enrichment_artwork: {e}", exc_info=True)
             return _err(str(e))
 
     def add_to_playlist(self, playlist_id: int, track_id: int) -> str:
