@@ -83,66 +83,49 @@ class LRCLibService:
         if not track or not track.file_path:
             return None
 
-        result = None
+        def finalize(status: str) -> str:
+            set_enrichment_status(self._conn, track_id, "lyrics", status)
+            return status
 
+        result = None
         if track.duration is not None:
             try:
-                result = self._fetcher.get(
-                    track.title, track.artist, track.album or "", track.duration
-                )
+                result = self._fetcher.get(track.title, track.artist, track.album or "", track.duration)
             except Exception:
-                log.error(
-                    f"LRCLib.get failed for track {track_id}", exc_info=True)
-                set_enrichment_status(
-                    self._conn, track_id, "lyrics", LyricsStatus.NOT_FETCHED)
-                return LyricsStatus.NOT_FETCHED
+                log.error(f"LRCLib.get failed for track {track_id}", exc_info=True)
+                return finalize(LyricsStatus.NOT_FETCHED)
 
         if result is None:
             try:
                 result = self._fetcher.search(track.title, track.artist)
             except Exception:
-                log.error(
-                    f"LRCLib.search failed for track {track_id}", exc_info=True)
-                set_enrichment_status(
-                    self._conn, track_id, "lyrics", LyricsStatus.NOT_FETCHED)
-                return LyricsStatus.NOT_FETCHED
+                log.error(f"LRCLib.search failed for track {track_id}", exc_info=True)
+                return finalize(LyricsStatus.NOT_FETCHED)
 
         if result is None:
-            set_enrichment_status(self._conn, track_id,
-                                  "lyrics", LyricsStatus.NOT_FOUND)
-            return LyricsStatus.NOT_FOUND
+            return finalize(LyricsStatus.NOT_FOUND)
 
         if result.instrumental:
-            set_enrichment_status(self._conn, track_id,
-                                  "lyrics", LyricsStatus.INSTRUMENTAL)
-            return LyricsStatus.INSTRUMENTAL
+            return finalize(LyricsStatus.INSTRUMENTAL)
 
         if result.syncedLyrics is not None:
             lyrics, state, status = result.syncedLyrics, "synced", LyricsStatus.SYNCHRONIZED
         elif result.plainLyrics is not None:
             lyrics, state, status = result.plainLyrics, "unsynced", LyricsStatus.PLAIN_TEXT
         else:
-            set_enrichment_status(self._conn, track_id,
-                                  "lyrics", LyricsStatus.NOT_FOUND)
-            return LyricsStatus.NOT_FOUND
+            return finalize(LyricsStatus.NOT_FOUND)
 
         try:
             self._embedder.embed(track.file_path, state, lyrics)
         except UnsupportedSuffix:
             log.error(
                 f"Unsupported format for track {track_id}: {track.file_path}")
-            set_enrichment_status(self._conn, track_id,
-                                  "lyrics", LyricsStatus.NOT_SUPPORTED)
-            return LyricsStatus.NOT_SUPPORTED
+            return finalize(LyricsStatus.NOT_SUPPORTED)
         except Exception as e:
-            log.error(
-                f"Failed to embed lyrics for track {track_id}: {e}", exc_info=True)
-            set_enrichment_status(self._conn, track_id,
-                                  "lyrics", LyricsStatus.NOT_FETCHED)
-            return LyricsStatus.NOT_FETCHED
+            log.error(f"Failed to embed lyrics for track {track_id}: {e}", exc_info=True)
+            return finalize(LyricsStatus.NOT_FETCHED)
 
-        set_enrichment_status(self._conn, track_id, "lyrics", status)
-        return status
+        return finalize(status)
 
     def fetch_and_embed_async(self, track_id: int) -> None:
         """Run ``fetch_and_embed`` in a daemon thread (fire-and-forget, used post-download)."""
