@@ -73,12 +73,12 @@ def test_apply_settings_no_timer_when_disabled(svc):
 def test_shutdown_cancels_active_timers(svc):
     scheduler, _, _, _ = svc
     mock_timer = MagicMock()
-    scheduler._lyrics_timer = mock_timer
-    scheduler._artwork_timer = mock_timer
+    scheduler._timers = {"lyrics": mock_timer, "artwork": mock_timer}
 
     scheduler.shutdown()
 
     assert mock_timer.cancel.call_count == 2
+    assert scheduler._timers == {}
 
 
 def test_run_artwork_batch_emits_started_and_complete(svc, mocker):
