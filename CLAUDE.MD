@@ -15,7 +15,7 @@ Desktop music player for Windows: search Last.fm → download from YouTube → p
 | DB | sqlite3 stdlib | WAL + FK + `check_same_thread=False` |
 | Models | pydantic 2.13.4 | Mirror DB schema exactly |
 | Tags | mutagen 1.47.0 | Audio file metadata r/w |
-| Tests | pytest 8.2.0 + pytest-mock 3.14.0 | 245 tests, 15 modules |
+| Tests | pytest 8.2.0 + pytest-mock 3.14.0 | 246 tests, 15 modules |
 
 ## Commands
 
@@ -44,18 +44,18 @@ src/
     artist.py                   # Last.fm result, no DB persistence
     album.py                    # Last.fm result, no DB persistence
   database/
-    database.py                 # Schema (5 tables) + all CRUD
+    database.py                 # Schema (5 tables) + all CRUD; generic get_tracks_to_enrich(kind=) + set_enrichment_status(kind=)
     config_manager.py           # Key/value settings with DEFAULTS dict
     file_manager.py             # quick_scan (blocking) + start_background_scan
   services/
     lastfm_service.py           # pylast search + cache table + get_artist_top_tracks + get_cover_image_url
     youtube_service.py          # yt-dlp download + sanitize_filename + ThreadPoolExecutor
     player_service.py           # sounddevice playback + Queue + seek + volume + threading.Lock
-    lrclib_service.py           # LRCLIB fetch + mutagen embed + async batch fetch + enrichment query
+    lrclib_service.py           # Per-track LRCLIB fetch + mutagen embed (fetch_and_embed / get_lyrics); no batch loop
     cover_art_service.py        # Last.fm cover art fetch + mutagen embed/read (M4A/MP3) + DB status writes
-    enrichment_scheduler.py     # Periodic enrichment coordinator: lyrics + artwork batches via threading.Timer
+    enrichment_scheduler.py     # Owns both lyrics + artwork batch loops + _timers dict; _BATCH_EVENTS table + _bucket classifier
   api/
-    api.py                      # ClaudeFMAPI — all methods callable from JS via pywebview js_api
+    api.py                      # ClaudeFMAPI — JS-callable methods via @_api_method decorator; persist_state() + shutdown() lifecycle
   utils/
     logger.py                   # Session-based rotating logger (10 sessions)
     event_bus.py                # Singleton: emit(type, payload) → window.evaluate_js
@@ -135,9 +135,11 @@ Push events via `event_bus.emit(type, payload)` → `window.evaluate_js("onEvent
 | `event_bus` singleton for all `evaluate_js` calls | No module calls `evaluate_js` directly — testable, decoupled from window lifecycle |
 | Lazy init of `YouTubeService` + `LastFMService` + `LRCLibService` in `api.py` | Avoids init at startup before settings are configured |
 | `threading.Lock` in `PlayerService` | `_position` and `_paused` accessed from playback thread and API thread |
-| `YouTubeService.shutdown(wait=False)` in `on_closing` | Prevents executor leak on app close |
+| `api.shutdown()` called from `on_closing` | Lifecycle owned by `ClaudeFMAPI` — `persist_state` + `_youtube.shutdown(wait=False)` + `_enrichment.shutdown` + `_conn.close`. `app.py` no longer reaches into private API attributes |
 | `imageio[ffmpeg]` not vendored binary | pip dep is simpler, no vendor dir needed |
-| Pydantic models mirror DB schema exactly | No conversion logic between layers; `date_downloaded` parsed from ISO string in `_row_to_track` |
+| Pydantic models mirror DB schema exactly | `_row_to_track` is just `Track.model_validate(dict(row))` — Pydantic 2 parses ISO datetimes + coerces enum strings natively |
+| `@_api_method` decorator on every JS-callable method | One `try/except` site instead of ~40; `ValueError` → `_err` (user error, no log); other `Exception` → `_err` + `log.error(exc_info=True)`. `raw=True` mode preserves byte-identical wire shape for methods returning raw arrays/dicts |
+| `get_tracks_to_enrich(kind=)` + `set_enrichment_status(kind=)` in `database.py` | One pair of generic helpers replaced five per-kind variants; `kind` whitelisted to `{lyrics, artwork}` to keep f-string-interpolated column names safe |
 | `auto` playlists capped at 15 | `delete_oldest_auto_playlist` called before inserting 16th |
 | Seek via stream restart (ffmpeg `-ss`) | sounddevice has no mid-stream seek; kill proc, restart ffmpeg with `-ss offset` |
 | Volume via PCM array scaling | No sounddevice volume API; apply `array.array('h')` 16-bit scaling before each write |
@@ -155,8 +157,10 @@ Push events via `event_bus.emit(type, payload)` → `window.evaluate_js("onEvent
 | `_localIdx` Map in `components.js` | O(1) local availability check per search result; avoids N API calls when rendering Last.fm results |
 | `player:changed` listener in `components.js` | Updates `.playing` class on visible track cards without re-rendering the list |
 | `artwork_status` + `artwork_fetched_at` columns on `tracks` | Mirrors `lyrics_status` pattern; enables cooldown-based retry without a separate job queue |
-| `EnrichmentScheduler` standalone service | Owns timer lifecycle; `LRCLibService` / `CoverArtService` do the work, scheduler owns timing — clear separation |
-| `threading.Timer` for auto-repeat in `EnrichmentScheduler` | No new deps; timer re-reads settings at fire time so interval changes take effect without restart |
+| `EnrichmentScheduler` owns both batch loops | Single owner of timer + threading + counters + progress events for lyrics AND artwork. `LRCLibService` / `CoverArtService` are pure per-track services exposing only `fetch_and_embed(track_id)` — symmetric layering |
+| `_run_batch(kind, fetch_fn)` + `_BATCH_EVENTS` + `_bucket` | Single generic batch loop driven by `_BATCH_EVENTS` table (per-kind event names + counter keys); `_bucket` classifier preserves original per-kind counter semantics (lyrics: `NOT_FETCHED` → `errors`; artwork: non-`EMBEDDED` → `not_found`) |
+| `_timers: dict[str, threading.Timer]` | Replaces the `_lyrics_timer` / `_artwork_timer` attribute pair; adding a third enrichment kind is one `_BATCH_EVENTS` entry + one `_REPEAT_SETTING` entry, not five new methods |
+| `threading.Timer` for auto-repeat in `EnrichmentScheduler` | No new deps; timer re-reads settings at fire time so interval changes take effect without restart. Reschedule call sits inside the `finally` block so a batch exception cannot silently kill the periodic timer |
 | `save_setting()` calls `apply_settings()` | Ensures timer reconfiguration is immediate after any setting change from the UI |
 | `get_track_artwork` returns base64 data URL | Avoids exposing file paths to JS; works cross-platform without a local HTTP server |
 | `loadArtwork(container)` lazy-loads via `data-artwork` attr | One API call per visible embedded track; `delete thumb.dataset.artwork` prevents double-load on re-render |
